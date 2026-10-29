@@ -10,6 +10,10 @@ This starter does not play or extract audio inside the app. YouTube does not pro
 
 The app initializes a reusable Ktor `HttpClient` using the OkHttp engine, JSON content negotiation, and bounded connection/request/socket timeouts. On application startup, it asks InnerTubeX to fetch and store YouTube's public visitor data for an unauthenticated browsing session. `MusicApplication.networkClient.catalog.search(query)` wraps InnerTubeX search metadata only; no InnerTubeX stream extraction or playback APIs are exposed by the catalog wrapper. Licensed playback still requires selecting and integrating a provider.
 
+## In-app playback
+
+The app includes an AndroidX Media3 ExoPlayer controller and a Compose player bar. A future licensed provider can implement `LicensedPlaybackSource` and return a `LicensedMediaItem`; the player boundary rejects InnerTubeX as a playback provider and refuses YouTube media hosts so YouTube playback stays in its official app/browser. No provider is currently connected, so the in-app play control stays disabled until one is integrated. The player runs only while the activity is alive; a background playback service is not included.
+
 InnerTubeX `v0.11.2` is published on JitPack under GPL-3.0 and requires the Kotlin 2.4.21 / Ktor 3.6.0 toolchain used here. Before distributing an app that bundles this dependency, review its GPL-3.0 source and notice obligations and reconcile them with this repository's MIT license.
 
 ## Build

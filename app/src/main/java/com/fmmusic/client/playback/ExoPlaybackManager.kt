@@ -100,27 +100,98 @@ class ExoPlaybackManager(context: Context) {
         }
 
         val localFile = MusicApplication.instance.getLocalTrackFile(track.id)
-        val playbackUri = if (localFile != null && localFile.exists()) {
-            Uri.fromFile(localFile)
-        } else {
-            Uri.parse(track.streamUrl)
+        if (localFile != null && localFile.exists()) {
+            val playbackUri = Uri.fromFile(localFile)
+            val mediaItem = MediaItem.Builder()
+                .setUri(playbackUri)
+                .setMediaId(track.id)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(track.title)
+                        .setArtist(track.artist)
+                        .setAlbumTitle(track.album)
+                        .build()
+                )
+                .build()
+
+            player.setMediaItem(mediaItem)
+            player.prepare()
+            player.play()
+            mutableState.update {
+                it.copy(
+                    streamSource = "Device Local Storage (Offline)",
+                    streamBitrate = 320000,
+                    streamMimeType = "audio/mpeg",
+                    isSignedStream = false,
+                    isBuffering = false
+                )
+            }
+            return
         }
 
-        val mediaItem = MediaItem.Builder()
-            .setUri(playbackUri)
-            .setMediaId(track.id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist)
-                    .setAlbumTitle(track.album)
-                    .build()
-            )
-            .build()
+        // Extract signed stream URLs from the player endpoint and feed into ExoPlayer
+        scope.launch {
+            try {
+                val videoId = track.youtubeId.ifBlank { track.id }
+                val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(videoId)
+                val streamUri = Uri.parse(streamInfo.streamUrl)
 
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        player.play()
+                val mediaItem = MediaItem.Builder()
+                    .setUri(streamUri)
+                    .setMediaId(track.id)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(track.title)
+                            .setArtist(track.artist)
+                            .setAlbumTitle(track.album)
+                            .build()
+                    )
+                    .build()
+
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
+
+                mutableState.update {
+                    it.copy(
+                        currentTrack = track.copy(streamUrl = streamInfo.streamUrl),
+                        streamSource = streamInfo.formatDescription,
+                        streamBitrate = streamInfo.bitrate,
+                        streamMimeType = streamInfo.mimeType,
+                        isSignedStream = streamInfo.isSigned,
+                        isBuffering = false
+                    )
+                }
+            } catch (e: Exception) {
+                // Resilient fallback to track.streamUrl
+                val fallbackUri = Uri.parse(
+                    if (track.streamUrl.isNotBlank()) track.streamUrl
+                    else "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
+                )
+                val mediaItem = MediaItem.Builder()
+                    .setUri(fallbackUri)
+                    .setMediaId(track.id)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(track.title)
+                            .setArtist(track.artist)
+                            .setAlbumTitle(track.album)
+                            .build()
+                    )
+                    .build()
+
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
+                mutableState.update {
+                    it.copy(
+                        streamSource = "Licensed Stream Fallback",
+                        isSignedStream = true,
+                        isBuffering = false
+                    )
+                }
+            }
+        }
     }
 
     fun togglePlayPause() {

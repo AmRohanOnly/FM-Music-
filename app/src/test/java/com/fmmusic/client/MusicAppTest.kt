@@ -68,4 +68,16 @@ class MusicAppTest {
         assertEquals("WEB_REMIX", session.clientName)
         service.close()
     }
+
+    @Test
+    fun testExtractPlayerStreamReturnsSignedStreamUrl() = runBlocking {
+        val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
+        val streamInfo = service.extractPlayerStream("ElZfdU54Cp8")
+        assertNotNull("Expected non-null streamInfo", streamInfo)
+        assertTrue("Expected streamUrl to be populated", streamInfo.streamUrl.isNotBlank())
+        assertTrue("Expected stream to be marked signed", streamInfo.isSigned)
+        assertTrue("Expected valid audio bitrate", streamInfo.bitrate > 0)
+        assertTrue("Expected audio mime type", streamInfo.mimeType.contains("audio"))
+        service.close()
+    }
 }

@@ -1,4 +1,5 @@
 import { Track } from '../data/musicCatalog';
+import { musicNetworkClient, StreamFormatInfo } from './musicNetworkClient';
 
 declare global {
   interface Window {
@@ -18,6 +19,12 @@ export interface InAppPlayerState {
   volume: number;
   isMuted: boolean;
   repeatMode: 'off' | 'all' | 'one';
+  streamEngine: 'local_audio' | 'youtube_iframe';
+  streamSource?: string;
+  streamBitrate?: number;
+  streamMimeType?: string;
+  isSignedStream: boolean;
+  extractedStreamUrl?: string;
 }
 
 type PlayerStateListener = (state: InAppPlayerState) => void;
@@ -26,10 +33,11 @@ class InAppPlayerManager {
   private ytPlayer: any = null;
   private ytReady = false;
   private audioFallback: HTMLAudioElement | null = null;
-  private currentMode: 'youtube' | 'audio' = 'youtube';
+  private currentMode: 'youtube' | 'audio' = 'audio';
   private containerId = 'fm-yt-hidden-player';
   private listeners = new Set<PlayerStateListener>();
   private progressInterval: any = null;
+  private activeExtractionRequestId = 0;
 
   private state: InAppPlayerState = {
     currentTrack: null,
@@ -42,6 +50,12 @@ class InAppPlayerManager {
     volume: 80,
     isMuted: false,
     repeatMode: 'off',
+    streamEngine: 'local_audio',
+    streamSource: undefined,
+    streamBitrate: undefined,
+    streamMimeType: undefined,
+    isSignedStream: false,
+    extractedStreamUrl: undefined,
   };
 
   constructor() {
@@ -230,33 +244,120 @@ class InAppPlayerManager {
     this.state.isBuffering = true;
     this.publish();
 
-    // Use YouTube IFrame player
-    if (track.youtubeId) {
-      this.currentMode = 'youtube';
-      if (this.audioFallback) {
-        this.audioFallback.pause();
+    // Prefer feeding signed stream URL directly into local media player engine
+    if (this.state.streamEngine === 'local_audio') {
+      const currentRequestId = ++this.activeExtractionRequestId;
+      this.currentMode = 'audio';
+
+      if (this.ytPlayer && this.ytReady) {
+        try {
+          this.ytPlayer.pauseVideo?.();
+        } catch {}
       }
 
-      if (this.ytReady && this.ytPlayer && this.ytPlayer.loadVideoById) {
-        try {
-          this.ytPlayer.loadVideoById({
-            videoId: track.youtubeId,
-            startSeconds: 0,
-          });
-          this.ytPlayer.playVideo();
-          return;
-        } catch {
-          // fall through
+      const videoId = track.youtubeId || track.id;
+      musicNetworkClient
+        .extractPlayerStreamUrl(videoId)
+        .then((streamInfo: StreamFormatInfo) => {
+          if (this.activeExtractionRequestId !== currentRequestId) return;
+          if (this.audioFallback) {
+            this.audioFallback.src = streamInfo.url;
+            this.audioFallback.volume = this.state.isMuted ? 0 : this.state.volume / 100;
+            this.audioFallback.currentTime = 0;
+            this.state.streamSource =
+              streamInfo.source === 'innertube_player'
+                ? 'InnerTube Player Endpoint'
+                : streamInfo.source === 'piped_api'
+                ? 'Piped Stream Extractor'
+                : 'Licensed Audio Stream';
+            this.state.streamBitrate = streamInfo.bitrate;
+            this.state.streamMimeType = streamInfo.mimeType;
+            this.state.isSignedStream = streamInfo.isSigned;
+            this.state.extractedStreamUrl = streamInfo.url;
+            this.publish();
+
+            this.audioFallback
+              .play()
+              .then(() => {
+                this.state.isPlaying = true;
+                this.state.isBuffering = false;
+                this.publish();
+              })
+              .catch(() => {
+                // In case of local audio decode error, fall back to catalog audio or YouTube iframe
+                if (track.fallbackAudio) {
+                  this.audioFallback!.src = track.fallbackAudio;
+                  this.audioFallback!.play().catch(() => {});
+                } else if (track.youtubeId) {
+                  this.playViaYouTubeIframe(track);
+                }
+              });
+          }
+        })
+        .catch(() => {
+          if (this.activeExtractionRequestId !== currentRequestId) return;
+          if (track.fallbackAudio && this.audioFallback) {
+            this.audioFallback.src = track.fallbackAudio;
+            this.audioFallback.play().catch(() => {});
+          } else if (track.youtubeId) {
+            this.playViaYouTubeIframe(track);
+          }
+        });
+      return;
+    }
+
+    // Otherwise use YouTube IFrame player engine
+    this.playViaYouTubeIframe(track);
+  }
+
+  private playViaYouTubeIframe(track: Track) {
+    if (!track.youtubeId) {
+      if (track.fallbackAudio && this.audioFallback) {
+        this.currentMode = 'audio';
+        this.audioFallback.src = track.fallbackAudio;
+        this.audioFallback.play().catch(() => {});
+      }
+      return;
+    }
+
+    this.currentMode = 'youtube';
+    if (this.audioFallback) {
+      this.audioFallback.pause();
+    }
+
+    if (this.ytReady && this.ytPlayer && this.ytPlayer.loadVideoById) {
+      try {
+        this.ytPlayer.loadVideoById({
+          videoId: track.youtubeId,
+          startSeconds: 0,
+        });
+        this.ytPlayer.playVideo();
+        this.state.streamEngine = 'youtube_iframe';
+        this.state.streamSource = 'YouTube IFrame Engine';
+        this.state.isSignedStream = true;
+        this.publish();
+      } catch {
+        // Fall back to local audio if iframe fails
+        if (track.fallbackAudio && this.audioFallback) {
+          this.currentMode = 'audio';
+          this.audioFallback.src = track.fallbackAudio;
+          this.audioFallback.play().catch(() => {});
         }
       }
     }
+  }
 
-    // Audio stream fallback
-    if (track.fallbackAudio && this.audioFallback) {
-      this.currentMode = 'audio';
-      this.audioFallback.src = track.fallbackAudio;
-      this.audioFallback.play().catch(() => {});
+  public setStreamEngine(engine: 'local_audio' | 'youtube_iframe') {
+    this.state.streamEngine = engine;
+    this.publish();
+    if (this.state.currentTrack) {
+      this.playTrack(this.state.currentTrack);
     }
+  }
+
+  public toggleStreamEngine() {
+    const nextEngine = this.state.streamEngine === 'local_audio' ? 'youtube_iframe' : 'local_audio';
+    this.setStreamEngine(nextEngine);
   }
 
   public togglePlayPause() {

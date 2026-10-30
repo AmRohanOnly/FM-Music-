@@ -22,8 +22,10 @@ import {
   HardDrive,
   Globe,
   Trash2,
+  Zap,
+  Radio,
 } from 'lucide-react';
-import { musicNetworkClient, VisitorSessionState } from './services/musicNetworkClient';
+import { musicNetworkClient, VisitorSessionState, StreamFormatInfo } from './services/musicNetworkClient';
 
 interface GreetingInfo {
   heading: string;
@@ -160,6 +162,24 @@ export default function App() {
       return new Set(['hindi-1', 'chill-1', 'new-1']);
     }
   });
+
+  const [testingStream, setTestingStream] = useState(false);
+  const [extractedStreamResult, setExtractedStreamResult] = useState<StreamFormatInfo | null>(null);
+
+  const handleExtractStream = async (videoId: string) => {
+    setTestingStream(true);
+    try {
+      const res = await musicNetworkClient.extractPlayerStreamUrl(videoId);
+      setExtractedStreamResult(res);
+      setNotification(`Extracted signed stream: ${res.mimeType} (${Math.round(res.bitrate / 1000)} kbps)`);
+      setTimeout(() => setNotification(null), 3500);
+    } catch (err: any) {
+      setNotification(`Extraction error: ${err?.message || 'Failed'}`);
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setTestingStream(false);
+    }
+  };
 
   const toggleDownload = (track: Track, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -875,6 +895,17 @@ export default function App() {
                     PLAYING
                   </span>
                 )}
+                <span
+                  className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border ${
+                    playerState.streamEngine === 'local_audio'
+                      ? 'bg-[#1F291E] text-[#B9F36A] border-[#B9F36A]/30'
+                      : 'bg-[#291E23] text-amber-300 border-amber-400/30'
+                  }`}
+                  title={`Player Engine: ${playerState.streamEngine === 'local_audio' ? 'Local Media Player (HTML5/ExoPlayer pipeline with signed stream)' : 'YouTube Hidden Embed'}`}
+                >
+                  <Zap className="w-2.5 h-2.5" />
+                  {playerState.streamEngine === 'local_audio' ? 'Local Engine' : 'iFrame Fallback'}
+                </span>
               </div>
               <p className="text-[#A2A2B2] text-xs truncate mt-0.5">
                 {playerState.currentTrack
@@ -887,6 +918,24 @@ export default function App() {
           {/* Center/Right: Audio Visualizer & Controls */}
           <div className="shrink-0 flex items-center gap-2 sm:gap-3">
             <AudioVisualizer isPlaying={playerState.isPlaying} />
+
+            <button
+              onClick={() => {
+                inAppPlayer.toggleStreamEngine();
+                setNotification(
+                  `Engine switched to: ${playerState.streamEngine === 'local_audio' ? 'YouTube iFrame' : 'Local Audio (Signed Stream)'}`
+                );
+                setTimeout(() => setNotification(null), 3000);
+              }}
+              className={`p-2 transition-colors cursor-pointer rounded-lg hidden sm:block ${
+                playerState.streamEngine === 'local_audio'
+                  ? 'text-[#B9F36A] hover:bg-[#B9F36A]/10'
+                  : 'text-amber-400 hover:bg-amber-400/10'
+              }`}
+              title={`Toggle Player Engine (Current: ${playerState.streamEngine === 'local_audio' ? 'Local Audio Engine' : 'YouTube iFrame'})`}
+            >
+              <Radio className="w-4 h-4" />
+            </button>
 
             <button
               onClick={() => inAppPlayer.prev()}
@@ -1014,6 +1063,24 @@ export default function App() {
                 <p className="text-sm sm:text-base text-[#B7B7C4] mt-1 line-clamp-1">
                   {playerState.currentTrack?.artist || 'FM Music Catalog'}
                 </p>
+
+                {/* Stream Engine & Signed Stream Information */}
+                <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#1F291E] border border-[#B9F36A]/30 text-[#B9F36A]">
+                    <Zap className="w-3 h-3 text-[#B9F36A]" />
+                    {playerState.streamEngine === 'local_audio' ? 'Local Media Player Engine' : 'YouTube Hidden Embed'}
+                  </span>
+                  {playerState.streamSource && (
+                    <span className="text-[10px] text-[#A2A2B2] bg-[#181822] px-2 py-0.5 rounded-md border border-[#2B2B38]">
+                      {playerState.streamSource} {playerState.streamBitrate ? `• ${Math.round(playerState.streamBitrate / 1000)} kbps` : ''}
+                    </span>
+                  )}
+                  {playerState.streamMimeType && (
+                    <span className="text-[10px] text-[#7E7E90] bg-[#141419] px-2 py-0.5 rounded-md font-mono border border-[#252530]">
+                      {playerState.streamMimeType.split(';')[0]}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1191,6 +1258,71 @@ export default function App() {
                     {visitorSession.visitorData || 'Generating...'}
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* InnerTube Player Endpoint & Signed Stream Architecture */}
+            <div className="mt-3 p-3.5 rounded-xl bg-[#141419] border border-[#2B2B36] space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#22222E]">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-[#B9F36A]" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Player Endpoint & Signed Stream
+                  </span>
+                </div>
+                <button
+                  onClick={() => inAppPlayer.toggleStreamEngine()}
+                  className="text-[11px] text-[#B9F36A] hover:underline font-semibold cursor-pointer"
+                >
+                  Engine: {playerState.streamEngine === 'local_audio' ? 'Local Media' : 'iFrame'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-[#727282]">InnerTube Endpoint:</span>
+                  <p className="text-[#D0D0E0] font-mono mt-0.5 text-[10px]">/youtubei/v1/player</p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Pipeline:</span>
+                  <p className="text-[#B9F36A] font-semibold mt-0.5">ExoPlayer / Media3</p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Stream Source:</span>
+                  <p className="text-white font-mono mt-0.5 text-[10px]">{playerState.streamSource || 'Ready on play'}</p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Audio Codec:</span>
+                  <p className="text-white font-mono mt-0.5 text-[10px]">
+                    {playerState.streamBitrate ? `${Math.round(playerState.streamBitrate / 1000)} kbps Opus` : 'Opus 160kbps'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Live Stream Extraction Tester */}
+              <div className="pt-2 border-t border-[#22222E]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[#8E8E9E]">Test Endpoint Extraction:</span>
+                  <button
+                    disabled={testingStream}
+                    onClick={() => handleExtractStream(playerState.currentTrack?.youtubeId || 'jfKfPfyJRdk')}
+                    className="px-2.5 py-1 bg-[#252533] hover:bg-[#303042] text-[#B9F36A] text-[11px] font-semibold rounded-md border border-[#3A3A4D] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {testingStream ? 'Resolving...' : 'Extract Signed Stream'}
+                  </button>
+                </div>
+
+                {extractedStreamResult && (
+                  <div className="mt-2 p-2 rounded bg-[#0E0E14] border border-[#232330] text-[10px] space-y-1 font-mono">
+                    <div className="flex justify-between text-[#8E8E9E]">
+                      <span>Source: {extractedStreamResult.source}</span>
+                      <span className="text-[#B9F36A]">{Math.round(extractedStreamResult.bitrate / 1000)} kbps</span>
+                    </div>
+                    <div className="text-[#686878] truncate" title={extractedStreamResult.url}>
+                      URL: {extractedStreamResult.url.substring(0, 48)}...
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

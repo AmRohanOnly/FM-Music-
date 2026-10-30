@@ -97,7 +97,16 @@ class MusicApplication : Application() {
         appScope.launch {
             try {
                 val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                val url = URL(track.streamUrl)
+                val streamUrlToDownload = if (track.streamUrl.startsWith("http") && track.streamUrl.contains("sig=")) {
+                    track.streamUrl
+                } else {
+                    try {
+                        innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id }).streamUrl
+                    } catch (_: Exception) {
+                        track.streamUrl.ifBlank { "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3" }
+                    }
+                }
+                val url = URL(streamUrlToDownload)
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000

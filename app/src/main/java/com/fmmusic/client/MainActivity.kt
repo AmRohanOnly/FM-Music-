@@ -993,13 +993,27 @@ private fun MiniPlayerBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        state.currentTrack?.artist ?: "In-App Audio Stream",
-                        color = SoftText,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            state.currentTrack?.artist ?: "In-App Audio Stream",
+                            color = SoftText,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (!state.streamSource.isNullOrBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "• " + (state.streamSource ?: ""),
+                                color = Accent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.width(8.dp))
@@ -1193,7 +1207,34 @@ private fun NowPlayingSheet(
                         }
                     }
 
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(14.dp))
+
+                    // ExoPlayer Signed Stream Engine Badge
+                    Surface(
+                        color = PanelSecondary,
+                        shape = RoundedCornerShape(10.dp),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Accent, CircleShape)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "ExoPlayer • " + (state.streamSource ?: "Signed Stream (InnerTube Player Endpoint)"),
+                                color = Accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
 
                     // Scrubber Timeline Slider
                     var sliderPos by remember(state.currentPositionMs) {

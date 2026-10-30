@@ -37,7 +37,11 @@ data class PlaybackUiState(
     val isShuffled: Boolean = false,
     val queue: List<MusicTrack> = emptyList(),
     val queueIndex: Int = -1,
-    val sleepTimerMinutesRemaining: Int? = null
+    val sleepTimerMinutesRemaining: Int? = null,
+    val streamSource: String? = null,
+    val streamBitrate: Int? = null,
+    val streamMimeType: String? = null,
+    val isSignedStream: Boolean = false
 ) {
     val hasMedia: Boolean get() = currentTrack != null
     val progressFraction: Float

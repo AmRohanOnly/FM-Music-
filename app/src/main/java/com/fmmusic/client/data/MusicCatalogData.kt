@@ -199,4 +199,16 @@ object MusicCatalogData {
 
         return results
     }
+
+    fun getTrackById(id: String): MusicTrack {
+        return curatedTracks.firstOrNull { it.id == id } ?: MusicTrack(
+            id = id,
+            title = "Track $id",
+            artist = "Downloaded Audio",
+            album = "Offline Collection",
+            durationSeconds = 220,
+            vibe = "Offline",
+            isDownloaded = true
+        )
+    }
 }

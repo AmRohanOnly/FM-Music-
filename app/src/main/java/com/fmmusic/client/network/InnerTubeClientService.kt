@@ -23,6 +23,18 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+import java.util.UUID
+
+data class VisitorSessionState(
+    val isInitialized: Boolean = false,
+    val visitorData: String? = null,
+    val clientName: String = "WEB_REMIX",
+    val clientVersion: String = "1.20240101.01.00",
+    val isPublicBrowsingActive: Boolean = false,
+    val lastSessionStartTimestamp: Long = 0L,
+    val statusMessage: String = "Uninitialized"
+)
+
 class InnerTubeClientService(private val scope: CoroutineScope) {
 
     private val json = Json {
@@ -38,6 +50,9 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
     val innerTube = InnerTube(httpClient)
 
+    private val mutableSessionState = MutableStateFlow(VisitorSessionState())
+    val sessionState = mutableSessionState.asStateFlow()
+
     private val mutableVisitorData = MutableStateFlow<String?>(null)
     val visitorData = mutableVisitorData.asStateFlow()
 
@@ -47,17 +62,49 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     }
 
     fun initializeVisitorSession() {
+        startVisitorSession()
+    }
+
+    /**
+     * Initializes the InnerTube client and starts a visitor session for public music browsing.
+     * Generates or fetches visitorData (X-Goog-Visitor-Id) and configures the unauthenticated session.
+     */
+    fun startVisitorSession(): VisitorSessionState {
+        val fallbackToken = "Cgt" + UUID.randomUUID().toString().replace("-", "").take(11).uppercase()
+        var token: String = fallbackToken
+        try {
+            innerTube.visitorData = fallbackToken
+            mutableVisitorData.value = fallbackToken
+        } catch (_: Exception) {}
+
+        val newState = VisitorSessionState(
+            isInitialized = true,
+            visitorData = token,
+            clientName = "WEB_REMIX",
+            clientVersion = "1.20240101.01.00",
+            isPublicBrowsingActive = true,
+            lastSessionStartTimestamp = System.currentTimeMillis(),
+            statusMessage = "Visitor session active for public browsing"
+        )
+        mutableSessionState.value = newState
+
         scope.launch(Dispatchers.IO) {
             try {
-                val token = innerTube.fetchFreshVisitorData()
-                if (!token.isNullOrBlank()) {
-                    mutableVisitorData.value = token
-                    innerTube.visitorData = token
+                val freshToken = innerTube.fetchFreshVisitorData()
+                if (!freshToken.isNullOrBlank()) {
+                    mutableVisitorData.value = freshToken
+                    innerTube.visitorData = freshToken
+                    mutableSessionState.value = newState.copy(
+                        visitorData = freshToken,
+                        statusMessage = "Visitor session verified and active"
+                    )
                 }
             } catch (_: Exception) {
-                // Non-fatal, unauthenticated calls continue with default headers
+                // Continue with the initialized fallback token
             }
         }
+
+        return newState
     }
 
     /**

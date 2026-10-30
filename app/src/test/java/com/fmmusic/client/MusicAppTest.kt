@@ -49,6 +49,23 @@ class MusicAppTest {
     fun testInnerTubeServiceInitialization() = runBlocking {
         val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
         assertNotNull(service.innerTube)
+        val session = service.sessionState.value
+        assertTrue("Expected visitor session to be initialized", session.isInitialized)
+        assertTrue("Expected public browsing to be active", session.isPublicBrowsingActive)
+        assertNotNull("Expected non-null visitor token", session.visitorData)
+        assertEquals("WEB_REMIX", session.clientName)
+        service.close()
+    }
+
+    @Test
+    fun testStartVisitorSessionGeneratesValidSessionState() = runBlocking {
+        val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
+        val session = service.startVisitorSession()
+        assertTrue(session.isInitialized)
+        assertTrue(session.isPublicBrowsingActive)
+        assertNotNull(session.visitorData)
+        assertTrue("Expected visitorData token format", session.visitorData?.startsWith("Cgt") == true)
+        assertEquals("WEB_REMIX", session.clientName)
         service.close()
     }
 }

@@ -18,7 +18,12 @@ import {
   X,
   ExternalLink,
   ChevronDown,
+  Download,
+  HardDrive,
+  Globe,
+  Trash2,
 } from 'lucide-react';
+import { musicNetworkClient, VisitorSessionState } from './services/musicNetworkClient';
 
 interface GreetingInfo {
   heading: string;
@@ -143,6 +148,39 @@ export default function App() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [greetingInfo, setGreetingInfo] = useState<GreetingInfo>(() => getTimeBasedGreeting());
+  const [visitorSession, setVisitorSession] = useState<VisitorSessionState>(() => musicNetworkClient.getVisitorSession());
+  const [mainTab, setMainTab] = useState<'online' | 'offline'>('online');
+  const [searchFilter, setSearchFilter] = useState<'all' | 'downloaded'>('all');
+  const [offlineQuery, setOfflineQuery] = useState('');
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('fm_downloaded_ids');
+      return saved ? new Set(JSON.parse(saved)) : new Set(['hindi-1', 'chill-1', 'new-1']);
+    } catch {
+      return new Set(['hindi-1', 'chill-1', 'new-1']);
+    }
+  });
+
+  const toggleDownload = (track: Track, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setDownloadedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(track.id)) {
+        next.delete(track.id);
+        setNotification(`Removed "${track.title}" from offline storage`);
+      } else {
+        next.add(track.id);
+        setNotification(`Downloaded "${track.title}" for offline playback`);
+      }
+      try {
+        localStorage.setItem('fm_downloaded_ids', JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const allDownloadedTracks = CURATED_CATALOG.filter((t) => downloadedIds.has(t.id));
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -161,6 +199,13 @@ export default function App() {
       clearInterval(timer);
     };
   }, []);
+
+  const handleRestartVisitorSession = () => {
+    const session = musicNetworkClient.startVisitorSession();
+    setVisitorSession(session);
+    setNotification(`InnerTube visitor session active (${session.visitorData?.substring(0, 10)}...)`);
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   const handleSearch = (q: string) => {
     const trimmed = q.trim();
@@ -218,6 +263,14 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowDiagnostics(true)}
+              className="px-2.5 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer"
+              title={`InnerTube Visitor Session Active: ${visitorSession.visitorData || 'Ready'}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A] animate-pulse" />
+              <span className="text-[11px] font-bold text-[#B9F36A]">InnerTube</span>
+            </button>
+            <button
+              onClick={() => setShowDiagnostics(true)}
               className="px-3 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer"
               title="Architecture Info"
             >
@@ -227,238 +280,531 @@ export default function App() {
           </div>
         </header>
 
-        {/* Hero Section */}
-        <section className="mt-[34px]">
-          <div className="flex items-center gap-2.5 mb-3.5">
-            <FmLogo size={28} />
-            <span className="text-[11px] font-semibold tracking-wider uppercase px-2.5 py-1 rounded-full bg-[#1B1B23] border border-[#393943] text-[#B9F36A] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A] animate-pulse" />
-              {greetingInfo.tag}
-            </span>
-          </div>
-
-          <h1 className="text-[34px] sm:text-[38px] leading-[40px] sm:leading-[43px] font-bold tracking-tight text-white whitespace-pre-line">
-            {greetingInfo.heading}
-          </h1>
-
-          <p className="mt-[10px] text-[#B7B7C4] text-sm sm:text-base">
-            {greetingInfo.subtext}
-          </p>
+        {/* Main Section Mode Switcher (Online Discovery vs Offline Collection) */}
+        <section className="mt-5 p-1 bg-[#171720] border border-[#2B2B38] rounded-2xl flex items-center gap-1.5 shadow-sm">
+          <button
+            onClick={() => setMainTab('online')}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              mainTab === 'online'
+                ? 'bg-[#B9F36A] text-[#111116] shadow-md shadow-[#B9F36A]/20'
+                : 'text-[#B7B7C4] hover:text-white hover:bg-[#20202A]'
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span>Online Discovery</span>
+          </button>
+          <button
+            onClick={() => setMainTab('offline')}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              mainTab === 'offline'
+                ? 'bg-[#B9F36A] text-[#111116] shadow-md shadow-[#B9F36A]/20'
+                : 'text-[#B7B7C4] hover:text-white hover:bg-[#20202A]'
+            }`}
+          >
+            <HardDrive className="w-4 h-4" />
+            <span>Offline Collection ({downloadedIds.size})</span>
+          </button>
         </section>
 
-        {/* Search Bar Row */}
-        <section className="mt-[26px]">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex-1">
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  if (!e.target.value.trim()) setSearchResults(null);
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="Songs, artists, albums"
-                className="w-full h-14 bg-[#181820] border border-[#393943] focus:border-[#B9F36A] focus:outline-none rounded-[16px] pl-11 pr-4 text-white placeholder-[#686875] text-base transition-colors"
-              />
-              <Search className="w-5 h-5 text-[#737384] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              {query && (
+        {mainTab === 'online' ? (
+          <>
+            {/* Hero Section */}
+            <section className="mt-[28px]">
+              <div className="flex items-center gap-2.5 mb-3">
+                <FmLogo size={28} />
+                <span className="text-[11px] font-semibold tracking-wider uppercase px-2.5 py-1 rounded-full bg-[#1B1B23] border border-[#393943] text-[#B9F36A] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A] animate-pulse" />
+                  {greetingInfo.tag}
+                </span>
+              </div>
+
+              <h1 className="text-[32px] sm:text-[38px] leading-[38px] sm:leading-[43px] font-bold tracking-tight text-white whitespace-pre-line">
+                {greetingInfo.heading}
+              </h1>
+
+              <p className="mt-[10px] text-[#B7B7C4] text-sm sm:text-base">
+                {greetingInfo.subtext}
+              </p>
+            </section>
+
+            {/* Search Bar Row */}
+            <section className="mt-[24px]">
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex-1">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      if (!e.target.value.trim()) setSearchResults(null);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Songs, artists, albums"
+                    className="w-full h-14 bg-[#181820] border border-[#393943] focus:border-[#B9F36A] focus:outline-none rounded-[16px] pl-11 pr-4 text-white placeholder-[#686875] text-base transition-colors"
+                  />
+                  <Search className="w-5 h-5 text-[#737384] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  {query && (
+                    <button
+                      onClick={() => {
+                        setQuery('');
+                        setSearchResults(null);
+                      }}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#737384] hover:text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 <button
-                  onClick={() => {
-                    setQuery('');
-                    setSearchResults(null);
-                  }}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#737384] hover:text-white"
+                  onClick={() => handleSearch(query)}
+                  disabled={!query.trim()}
+                  className="h-14 px-6 rounded-[14px] bg-[#B9F36A] hover:bg-[#a6e651] disabled:opacity-40 disabled:hover:bg-[#B9F36A] text-[#111116] font-bold text-base transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                 >
-                  <X className="w-4 h-4" />
+                  <span>Search</span>
                 </button>
-              )}
-            </div>
-            <button
-              onClick={() => handleSearch(query)}
-              disabled={!query.trim()}
-              className="h-14 px-6 rounded-[14px] bg-[#B9F36A] hover:bg-[#a6e651] disabled:opacity-40 disabled:hover:bg-[#B9F36A] text-[#111116] font-bold text-base transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-            >
-              <span>Search</span>
-            </button>
-          </div>
-        </section>
+              </div>
+            </section>
 
-        {/* Search Results Display */}
-        {searchResults && (
-          <section className="mt-6 bg-[#16161D] border border-[#2B2B36] rounded-2xl p-4 animate-fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-[#242430]">
-              <span className="text-xs font-bold text-[#B7B7C4] uppercase tracking-wider">
-                Search Results ({searchResults.length})
-              </span>
-              <button
-                onClick={() => setSearchResults(null)}
-                className="text-xs text-[#B9F36A] hover:underline cursor-pointer"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
-              {searchResults.map((track) => {
-                const isThisTrackPlaying =
-                  playerState.currentTrack?.id === track.id && playerState.isPlaying;
-                return (
-                  <div
-                    key={track.id}
-                    onClick={() => handlePlayTrack(track, searchResults)}
-                    className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#20202A] cursor-pointer transition-colors group"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 pr-2">
-                      <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#252532]">
-                        <img
-                          src={track.thumbnail}
-                          alt={track.title}
-                          className="w-full h-full object-cover"
-                        />
-                        <div
-                          className={`absolute inset-0 bg-black/40 flex items-center justify-center ${
-                            isThisTrackPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                          } transition-opacity`}
-                        >
-                          {isThisTrackPlaying ? (
-                            <AudioVisualizer isPlaying={true} className="scale-75 border-none bg-transparent" />
-                          ) : (
-                            <Play className="w-4 h-4 text-[#B9F36A] fill-current" />
-                          )}
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        <h4
-                          className={`text-sm font-semibold truncate ${
-                            playerState.currentTrack?.id === track.id ? 'text-[#B9F36A]' : 'text-white'
-                          }`}
-                        >
-                          {track.title}
-                        </h4>
-                        <p className="text-xs text-[#B7B7C4] truncate mt-0.5">
-                          {track.artist}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <span className="text-xs text-[#727282]">{track.durationFormatted}</span>
-                      <button className="w-8 h-8 rounded-full bg-[#2A2A38] group-hover:bg-[#B9F36A] text-[#B7B7C4] group-hover:text-[#111116] flex items-center justify-center transition-colors">
-                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            {/* Search Results Display with Online / Downloaded Filter */}
+            {searchResults && (
+              <section className="mt-6 bg-[#16161D] border border-[#2B2B36] rounded-2xl p-4 animate-fade-in">
+                <div className="flex flex-wrap items-center justify-between pb-3 border-b border-[#242430] gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#B7B7C4] uppercase tracking-wider">
+                      Search Results
+                    </span>
+                    <div className="flex items-center gap-1 bg-[#20202A] p-0.5 rounded-lg border border-[#323242]">
+                      <button
+                        onClick={() => setSearchFilter('all')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                          searchFilter === 'all'
+                            ? 'bg-[#B9F36A] text-[#111116]'
+                            : 'text-[#B7B7C4] hover:text-white'
+                        }`}
+                      >
+                        All ({searchResults.length})
+                      </button>
+                      <button
+                        onClick={() => setSearchFilter('downloaded')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                          searchFilter === 'downloaded'
+                            ? 'bg-[#B9F36A] text-[#111116]'
+                            : 'text-[#B7B7C4] hover:text-white'
+                        }`}
+                      >
+                        Downloaded ({searchResults.filter((t) => downloadedIds.has(t.id)).length})
                       </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                  <button
+                    onClick={() => setSearchResults(null)}
+                    className="text-xs text-[#B9F36A] hover:underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
 
-        {/* Vibe Tabs Selector */}
-        <section className="mt-[34px]">
-          <div className="flex items-center justify-between mb-3.5">
-            <h2 className="text-[#B7B7C4] text-xs font-bold tracking-[1.5px] uppercase">
-              Pick a vibe
-            </h2>
-            <button
-              onClick={() => handlePlayTrack(currentVibeTracks[0], currentVibeTracks)}
-              className="text-xs text-[#B9F36A] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
-            >
-              <Play className="w-3 h-3 fill-current" />
-              <span>Play Vibe Mix</span>
-            </button>
-          </div>
+                <div className="mt-3 space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {searchResults
+                    .filter((track) => (searchFilter === 'downloaded' ? downloadedIds.has(track.id) : true))
+                    .map((track) => {
+                      const isThisTrackPlaying =
+                        playerState.currentTrack?.id === track.id && playerState.isPlaying;
+                      const isDownloaded = downloadedIds.has(track.id);
 
-          {/* Vibe Pill Selector */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-            {VIBES.map((vibe) => (
-              <button
-                key={vibe}
-                onClick={() => setSelectedVibe(vibe)}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 cursor-pointer ${
-                  selectedVibe === vibe
-                    ? 'bg-[#B9F36A] text-[#111116] shadow-sm shadow-[#B9F36A]/20'
-                    : 'bg-[#1B1B23] hover:bg-[#262633] text-[#B7B7C4] border border-[#2F2F3D]'
-                }`}
-              >
-                {vibe}
-              </button>
-            ))}
-          </div>
+                      return (
+                        <div
+                          key={track.id}
+                          onClick={() => handlePlayTrack(track, searchResults)}
+                          className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#20202A] cursor-pointer transition-colors group"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 pr-2">
+                            <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-[#252532]">
+                              <img
+                                src={track.thumbnail}
+                                alt={track.title}
+                                className="w-full h-full object-cover"
+                              />
+                              <div
+                                className={`absolute inset-0 bg-black/40 flex items-center justify-center ${
+                                  isThisTrackPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                } transition-opacity`}
+                              >
+                                {isThisTrackPlaying ? (
+                                  <AudioVisualizer isPlaying={true} className="scale-75 border-none bg-transparent" />
+                                ) : (
+                                  <Play className="w-4 h-4 text-[#B9F36A] fill-current" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4
+                                  className={`text-sm font-semibold truncate ${
+                                    playerState.currentTrack?.id === track.id ? 'text-[#B9F36A]' : 'text-white'
+                                  }`}
+                                >
+                                  {track.title}
+                                </h4>
+                                {isDownloaded && (
+                                  <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#B9F36A]/20 text-[#B9F36A] border border-[#B9F36A]/30">
+                                    Offline
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-[#B7B7C4] truncate mt-0.5">
+                                {track.artist}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <span className="text-xs text-[#727282] hidden sm:inline">{track.durationFormatted}</span>
+                            <button
+                              onClick={(e) => toggleDownload(track, e)}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                                isDownloaded
+                                  ? 'bg-[#B9F36A]/20 text-[#B9F36A] hover:bg-red-500/20 hover:text-red-400'
+                                  : 'bg-[#252533] text-[#A0A0B0] hover:bg-[#B9F36A] hover:text-[#111116]'
+                              }`}
+                              title={isDownloaded ? 'Remove download' : 'Download for offline playback'}
+                            >
+                              {isDownloaded ? (
+                                <CheckCircle2 className="w-4 h-4" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button className="w-8 h-8 rounded-full bg-[#2A2A38] group-hover:bg-[#B9F36A] text-[#B7B7C4] group-hover:text-[#111116] flex items-center justify-center transition-colors">
+                              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
 
-          {/* Tracklist for Selected Vibe */}
-          <div className="mt-4 space-y-2 bg-[#171720] border border-[#2A2A36] rounded-2xl p-3 sm:p-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#252533] px-1 text-xs text-[#828294]">
-              <span>Tracks in {selectedVibe}</span>
-              <span>{currentVibeTracks.length} Songs</span>
-            </div>
+                  {searchResults.filter((track) => (searchFilter === 'downloaded' ? downloadedIds.has(track.id) : true)).length === 0 && (
+                    <div className="text-center py-8 text-xs text-[#808092]">
+                      No downloaded tracks match your search filter.
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
-            {currentVibeTracks.map((track, idx) => {
-              const isThisTrackPlaying =
-                playerState.currentTrack?.id === track.id && playerState.isPlaying;
-              return (
-                <div
-                  key={track.id}
-                  onClick={() => handlePlayTrack(track, currentVibeTracks)}
-                  className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#22222E] cursor-pointer transition-all group"
+            {/* Vibe Tabs Selector */}
+            <section className="mt-[34px]">
+              <div className="flex items-center justify-between mb-3.5">
+                <h2 className="text-[#B7B7C4] text-xs font-bold tracking-[1.5px] uppercase">
+                  Pick a vibe
+                </h2>
+                <button
+                  onClick={() => handlePlayTrack(currentVibeTracks[0], currentVibeTracks)}
+                  className="text-xs text-[#B9F36A] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
                 >
-                  <div className="flex items-center gap-3.5 min-w-0 pr-2">
-                    <span className="w-4 text-xs font-bold text-[#646476] text-center shrink-0">
-                      {idx + 1}
-                    </span>
-                    <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-[#242432]">
-                      <img
-                        src={track.thumbnail}
-                        alt={track.title}
-                        className="w-full h-full object-cover"
-                      />
-                      <div
-                        className={`absolute inset-0 bg-black/40 flex items-center justify-center ${
-                          isThisTrackPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                        } transition-opacity`}
-                      >
-                        {isThisTrackPlaying ? (
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#B9F36A] animate-ping" />
-                        ) : (
-                          <Play className="w-4 h-4 text-[#B9F36A] fill-current" />
-                        )}
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Play Vibe Mix</span>
+                </button>
+              </div>
+
+              {/* Vibe Pill Selector */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                {VIBES.map((vibe) => (
+                  <button
+                    key={vibe}
+                    onClick={() => setSelectedVibe(vibe)}
+                    className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shrink-0 cursor-pointer ${
+                      selectedVibe === vibe
+                        ? 'bg-[#B9F36A] text-[#111116] shadow-sm shadow-[#B9F36A]/20'
+                        : 'bg-[#1B1B23] hover:bg-[#262633] text-[#B7B7C4] border border-[#2F2F3D]'
+                    }`}
+                  >
+                    {vibe}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tracklist for Selected Vibe */}
+              <div className="mt-4 space-y-2 bg-[#171720] border border-[#2A2A36] rounded-2xl p-3 sm:p-4">
+                <div className="flex items-center justify-between pb-2 border-b border-[#252533] px-1 text-xs text-[#828294]">
+                  <span>Tracks in {selectedVibe}</span>
+                  <span>{currentVibeTracks.length} Songs</span>
+                </div>
+
+                {currentVibeTracks.map((track, idx) => {
+                  const isThisTrackPlaying =
+                    playerState.currentTrack?.id === track.id && playerState.isPlaying;
+                  const isDownloaded = downloadedIds.has(track.id);
+
+                  return (
+                    <div
+                      key={track.id}
+                      onClick={() => handlePlayTrack(track, currentVibeTracks)}
+                      className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#22222E] cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                        <span className="w-4 text-xs font-bold text-[#646476] text-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-[#242432]">
+                          <img
+                            src={track.thumbnail}
+                            alt={track.title}
+                            className="w-full h-full object-cover"
+                          />
+                          <div
+                            className={`absolute inset-0 bg-black/40 flex items-center justify-center ${
+                              isThisTrackPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            } transition-opacity`}
+                          >
+                            {isThisTrackPlaying ? (
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#B9F36A] animate-ping" />
+                            ) : (
+                              <Play className="w-4 h-4 text-[#B9F36A] fill-current" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h4
+                              className={`text-sm font-semibold truncate ${
+                                playerState.currentTrack?.id === track.id ? 'text-[#B9F36A]' : 'text-white'
+                              }`}
+                            >
+                              {track.title}
+                            </h4>
+                            {isDownloaded && (
+                              <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#B9F36A]/20 text-[#B9F36A] border border-[#B9F36A]/30">
+                                Offline
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#B7B7C4] truncate mt-0.5">
+                            {track.artist}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2.5">
+                        <span className="text-xs text-[#727282] hidden sm:inline">{track.durationFormatted}</span>
+                        <button
+                          onClick={(e) => toggleDownload(track, e)}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                            isDownloaded
+                              ? 'bg-[#B9F36A]/20 text-[#B9F36A] hover:bg-red-500/20 hover:text-red-400'
+                              : 'bg-[#262635] text-[#A0A0B0] hover:bg-[#B9F36A] hover:text-[#111116]'
+                          }`}
+                          title={isDownloaded ? 'Remove from offline' : 'Download for offline playback'}
+                        >
+                          {isDownloaded ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : (
+                            <Download className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlayTrack(track, currentVibeTracks);
+                          }}
+                          className="w-8 h-8 rounded-full bg-[#262635] group-hover:bg-[#B9F36A] text-[#B7B7C4] group-hover:text-[#111116] flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          {isThisTrackPlaying ? (
+                            <Pause className="w-3.5 h-3.5 fill-current" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                          )}
+                        </button>
                       </div>
                     </div>
-                    <div className="min-w-0">
-                      <h4
-                        className={`text-sm font-semibold truncate ${
-                          playerState.currentTrack?.id === track.id ? 'text-[#B9F36A]' : 'text-white'
-                        }`}
-                      >
-                        {track.title}
-                      </h4>
-                      <p className="text-xs text-[#B7B7C4] truncate mt-0.5">
-                        {track.artist}
-                      </p>
-                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        ) : (
+          /* OFFLINE COLLECTION SECTION */
+          <section className="mt-[28px] animate-fade-in space-y-5">
+            {/* Offline Header Card */}
+            <div className="p-5 sm:p-6 bg-[#171720] border border-[#2B2B38] rounded-2xl relative overflow-hidden">
+              <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-[#B9F36A]/15 text-[#B9F36A] border border-[#B9F36A]/30">
+                      LOCAL STORAGE • MEDIA3 CACHE
+                    </span>
                   </div>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                    Offline Collection
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#B7B7C4] mt-1">
+                    {allDownloadedTracks.length} song{allDownloadedTracks.length !== 1 ? 's' : ''} saved locally. Play anytime with zero cellular data.
+                  </p>
+                </div>
 
-                  <div className="shrink-0 flex items-center gap-3">
-                    <span className="text-xs text-[#727282]">{track.durationFormatted}</span>
+                {allDownloadedTracks.length > 0 && (
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePlayTrack(track, currentVibeTracks);
-                      }}
-                      className="w-8 h-8 rounded-full bg-[#262635] group-hover:bg-[#B9F36A] text-[#B7B7C4] group-hover:text-[#111116] flex items-center justify-center transition-colors"
+                      onClick={() => handlePlayTrack(allDownloadedTracks[0], allDownloadedTracks)}
+                      className="px-4 py-2.5 rounded-xl bg-[#B9F36A] hover:bg-[#a6e651] text-[#111116] font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-[#B9F36A]/20 transition-all cursor-pointer"
                     >
-                      {isThisTrackPlaying ? (
-                        <Pause className="w-3.5 h-3.5 fill-current" />
-                      ) : (
-                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                      )}
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Play All Offline</span>
                     </button>
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Offline Track Search & Filtering */}
+            {allDownloadedTracks.length > 0 ? (
+              <>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={offlineQuery}
+                    onChange={(e) => setOfflineQuery(e.target.value)}
+                    placeholder="Search your downloaded songs..."
+                    className="w-full h-12 bg-[#181820] border border-[#323242] focus:border-[#B9F36A] focus:outline-none rounded-xl pl-10 pr-4 text-white placeholder-[#686875] text-sm transition-colors"
+                  />
+                  <Search className="w-4 h-4 text-[#737384] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  {offlineQuery && (
+                    <button
+                      onClick={() => setOfflineQuery('')}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#737384] hover:text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        </section>
+
+                {/* Filtered Offline Songs List */}
+                <div className="bg-[#171720] border border-[#2B2B38] rounded-2xl p-3 sm:p-4 space-y-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#252533] px-1 text-xs text-[#828294]">
+                    <span>Downloaded Tracks</span>
+                    <span>
+                      {
+                        allDownloadedTracks.filter((t) => {
+                          if (!offlineQuery.trim()) return true;
+                          const q = offlineQuery.toLowerCase();
+                          return t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q);
+                        }).length
+                      }{' '}
+                      Available
+                    </span>
+                  </div>
+
+                  {allDownloadedTracks
+                    .filter((t) => {
+                      if (!offlineQuery.trim()) return true;
+                      const q = offlineQuery.toLowerCase();
+                      return t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q);
+                    })
+                    .map((track, idx) => {
+                      const isThisTrackPlaying =
+                        playerState.currentTrack?.id === track.id && playerState.isPlaying;
+
+                      return (
+                        <div
+                          key={track.id}
+                          onClick={() => handlePlayTrack(track, allDownloadedTracks)}
+                          className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#22222E] cursor-pointer transition-all group"
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                            <span className="w-4 text-xs font-bold text-[#646476] text-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-[#242432]">
+                              <img
+                                src={track.thumbnail}
+                                alt={track.title}
+                                className="w-full h-full object-cover"
+                              />
+                              <div
+                                className={`absolute inset-0 bg-black/40 flex items-center justify-center ${
+                                  isThisTrackPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                } transition-opacity`}
+                              >
+                                {isThisTrackPlaying ? (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-[#B9F36A] animate-ping" />
+                                ) : (
+                                  <Play className="w-4 h-4 text-[#B9F36A] fill-current" />
+                                )}
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <h4
+                                className={`text-sm font-semibold truncate ${
+                                  playerState.currentTrack?.id === track.id ? 'text-[#B9F36A]' : 'text-white'
+                                }`}
+                              >
+                                {track.title}
+                              </h4>
+                              <p className="text-xs text-[#B7B7C4] truncate mt-0.5">
+                                {track.artist}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 flex items-center gap-2.5">
+                            <span className="text-xs text-[#727282] hidden sm:inline">{track.durationFormatted}</span>
+                            <button
+                              onClick={(e) => toggleDownload(track, e)}
+                              className="w-8 h-8 rounded-full bg-[#262635] hover:bg-red-500/20 text-[#A0A0B0] hover:text-red-400 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Delete from offline storage"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePlayTrack(track, allDownloadedTracks);
+                              }}
+                              className="w-8 h-8 rounded-full bg-[#262635] group-hover:bg-[#B9F36A] text-[#B7B7C4] group-hover:text-[#111116] flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              {isThisTrackPlaying ? (
+                                <Pause className="w-3.5 h-3.5 fill-current" />
+                              ) : (
+                                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {allDownloadedTracks.filter((t) => {
+                    if (!offlineQuery.trim()) return true;
+                    const q = offlineQuery.toLowerCase();
+                    return t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q);
+                  }).length === 0 && (
+                    <div className="text-center py-8 text-xs text-[#808092]">
+                      No downloaded tracks match &ldquo;{offlineQuery}&rdquo;.
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Empty Offline State */
+              <div className="bg-[#171720] border border-[#2B2B38] rounded-2xl p-8 sm:p-12 text-center flex flex-col items-center">
+                <div className="w-16 h-16 rounded-2xl bg-[#22222E] border border-[#323242] flex items-center justify-center text-[#B9F36A] mb-4">
+                  <Download className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-white">No Offline Tracks Yet</h3>
+                <p className="text-xs sm:text-sm text-[#8E8E9E] max-w-sm mt-1.5 leading-relaxed">
+                  Download songs from the Online Discovery tab by clicking the download icon next to any song to store them for offline listening.
+                </p>
+                <button
+                  onClick={() => setMainTab('online')}
+                  className="mt-6 px-5 py-2.5 rounded-xl bg-[#B9F36A] hover:bg-[#a6e651] text-[#111116] font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>Browse Online Music</span>
+                </button>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Footer info */}
         <footer className="mt-8 pt-4 border-t border-[#1F1F28] text-xs text-[#7E7E8E] flex flex-wrap items-center justify-between gap-3">
@@ -813,7 +1159,42 @@ export default function App() {
               Inspired by open-source clients like <strong>MetroList</strong>, <strong>InnerTune</strong>, and <strong>OuterTune</strong>:
             </p>
 
-            <div className="mt-4 space-y-2.5">
+            {/* InnerTube Visitor Session Section */}
+            <div className="mt-4 p-3.5 rounded-xl bg-[#141419] border border-[#2B2B36] space-y-2">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#22222E]">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#B9F36A] animate-pulse" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    InnerTube Visitor Session
+                  </span>
+                </div>
+                <button
+                  onClick={handleRestartVisitorSession}
+                  className="text-[11px] text-[#B9F36A] hover:underline font-semibold cursor-pointer"
+                >
+                  Renew Session
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-[#727282]">Client Context:</span>
+                  <p className="text-[#D0D0E0] font-mono mt-0.5">{visitorSession.clientName}</p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Browsing Mode:</span>
+                  <p className="text-[#B9F36A] font-semibold mt-0.5">Public Unauthenticated</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-[#727282]">Visitor Token (X-Goog-Visitor-Id):</span>
+                  <p className="text-white font-mono bg-[#1E1E28] px-2 py-1 rounded text-[10px] truncate mt-0.5 border border-[#2F2F3F]">
+                    {visitorSession.visitorData || 'Generating...'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2.5">
               <div className="p-3 rounded-xl bg-[#141419] border border-[#2B2B36] flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-[#B9F36A] shrink-0 mt-0.5" />
                 <div>

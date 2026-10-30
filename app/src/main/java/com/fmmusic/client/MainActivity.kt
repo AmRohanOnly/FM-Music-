@@ -132,6 +132,10 @@ private fun formatDuration(millis: Long): String {
     return "%d:%02d".format(mins, secs)
 }
 
+enum class MainSectionMode {
+    ONLINE, OFFLINE
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
@@ -139,6 +143,17 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     val favorites by MusicApplication.instance.favorites.collectAsState()
     val downloads by MusicApplication.instance.downloads.collectAsState()
     val downloading by MusicApplication.instance.downloading.collectAsState()
+    val visitorSession by MusicApplication.instance.innerTubeService.sessionState.collectAsState()
+
+    var sectionMode by remember { mutableStateOf(MainSectionMode.ONLINE) }
+    var searchFilterMode by remember { mutableStateOf("ALL") }
+    var offlineSearchQuery by remember { mutableStateOf("") }
+
+    val downloadedTracks = remember(downloads) {
+        downloads.map { id ->
+            MusicCatalogData.getTrackById(id).copy(isDownloaded = true)
+        }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedVibe by remember { mutableStateOf("Hindi hits") }
@@ -228,202 +243,349 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                     }
                 }
 
-                Surface(
-                    color = Panel,
-                    shape = RoundedCornerShape(12.dp),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
-                ) {
-                    Text(
-                        greetingTag.uppercase(),
-                        color = Accent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(30.dp))
-
-            // Hero Greeting
-            Text(
-                greetingText,
-                fontSize = 34.sp,
-                lineHeight = 39.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "High-fidelity stream extraction with zero external redirects.",
-                color = SoftText,
-                fontSize = 14.sp
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Songs, artists, albums", color = Color(0xFF6B6B7A)) },
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Accent,
-                    unfocusedBorderColor = BorderDark,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Accent,
-                    focusedContainerColor = Panel,
-                    unfocusedContainerColor = Panel
-                )
-            )
-
-            // Search Results Section
-            if (searchQuery.isNotBlank()) {
-                Spacer(Modifier.height(18.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "SEARCH RESULTS (${searchResults.size})",
-                            color = SoftText,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (isSearching) {
-                            Spacer(Modifier.width(6.dp))
+                    Surface(
+                        color = Panel,
+                        shape = RoundedCornerShape(12.dp),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(if (visitorSession.isPublicBrowsingActive) Accent else Color.Yellow, CircleShape)
+                            )
+                            Spacer(Modifier.width(5.dp))
                             Text(
-                                "• InnerTube Searching...",
-                                color = Accent,
+                                "InnerTube",
+                                color = if (visitorSession.isPublicBrowsingActive) Accent else SoftText,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Normal
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                    Text(
-                        "Clear",
-                        color = Accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { searchQuery = "" }
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                searchResults.forEach { track ->
-                    TrackListItem(
-                        track = track,
-                        isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
-                        isFavorite = favorites.contains(track.id),
-                        isDownloaded = downloads.contains(track.id),
-                        isDownloading = downloading.contains(track.id),
-                        onPlay = { playbackManager.playTrack(track, searchResults) },
-                        onToggleFavorite = { MusicApplication.instance.toggleFavorite(track.id) },
-                        onToggleDownload = { MusicApplication.instance.toggleDownload(track) }
-                    )
-                }
-            }
 
-            Spacer(Modifier.height(28.dp))
-
-            // Vibe Mixes Tabs
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "PICK A VIBE",
-                    color = SoftText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-                Text(
-                    "Play Mix",
-                    color = Accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable {
-                        if (currentVibeTracks.isNotEmpty()) {
-                            playbackManager.playTrack(currentVibeTracks.first(), currentVibeTracks)
-                        }
+                    Surface(
+                        color = Panel,
+                        shape = RoundedCornerShape(12.dp),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                    ) {
+                        Text(
+                            greetingTag.uppercase(),
+                            color = Accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
                     }
-                )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(18.dp))
 
-            // Horizontal Vibe Chips
+            // Main Section Mode Switcher (Online vs. Offline)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .background(Panel, RoundedCornerShape(14.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                VibesList.forEach { vibe ->
-                    val isSelected = selectedVibe == vibe
-                    Surface(
-                        modifier = Modifier.clickable { selectedVibe = vibe },
-                        color = if (isSelected) Accent else Panel,
-                        shape = RoundedCornerShape(12.dp),
-                        border = if (!isSelected) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark)) else null
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { sectionMode = MainSectionMode.ONLINE },
+                    color = if (sectionMode == MainSectionMode.ONLINE) Accent else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            vibe,
-                            color = if (isSelected) Ink else SoftText,
+                            "🌐 Online Discovery",
+                            color = if (sectionMode == MainSectionMode.ONLINE) Ink else SoftText,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { sectionMode = MainSectionMode.OFFLINE },
+                    color = if (sectionMode == MainSectionMode.OFFLINE) Accent else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "💾 Offline (${downloadedTracks.size})",
+                            color = if (sectionMode == MainSectionMode.OFFLINE) Ink else SoftText,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            if (sectionMode == MainSectionMode.ONLINE) {
+                Spacer(Modifier.height(24.dp))
 
-            // Tracklist for selected Vibe
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Panel),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(14.dp)) {
+                // Hero Greeting
+                Text(
+                    greetingText,
+                    fontSize = 34.sp,
+                    lineHeight = 39.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "High-fidelity stream extraction with zero external redirects.",
+                    color = SoftText,
+                    fontSize = 14.sp
+                )
+
+                Spacer(Modifier.height(24.dp))
+
+                // Search Bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Songs, artists, albums", color = Color(0xFF6B6B7A)) },
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Accent,
+                        focusedContainerColor = Panel,
+                        unfocusedContainerColor = Panel
+                    )
+                )
+
+                // Search Results Section
+                if (searchQuery.isNotBlank()) {
+                    Spacer(Modifier.height(18.dp))
+
+                    val downloadedSearchCount = searchResults.count { downloads.contains(it.id) }
+                    val displayResults = if (searchFilterMode == "DOWNLOADED") {
+                        searchResults.filter { downloads.contains(it.id) }
+                    } else {
+                        searchResults
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "SEARCH RESULTS (${displayResults.size})",
+                                color = SoftText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isSearching) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "• Searching...",
+                                    color = Accent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                        }
                         Text(
-                            "$selectedVibe Playlist",
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            "${currentVibeTracks.size} Tracks",
-                            color = SoftText,
-                            fontSize = 12.sp
+                            "Clear",
+                            color = Accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { searchQuery = "" }
                         )
                     }
+
                     Spacer(Modifier.height(8.dp))
-                    currentVibeTracks.forEach { track ->
+
+                    // Filter toggles for search (Online vs Downloaded)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.clickable { searchFilterMode = "ALL" },
+                            color = if (searchFilterMode == "ALL") Accent else Panel,
+                            shape = RoundedCornerShape(8.dp),
+                            border = if (searchFilterMode != "ALL") CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark)) else null
+                        ) {
+                            Text(
+                                "All Results (${searchResults.size})",
+                                color = if (searchFilterMode == "ALL") Ink else SoftText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+
+                        Surface(
+                            modifier = Modifier.clickable { searchFilterMode = "DOWNLOADED" },
+                            color = if (searchFilterMode == "DOWNLOADED") Accent else Panel,
+                            shape = RoundedCornerShape(8.dp),
+                            border = if (searchFilterMode != "DOWNLOADED") CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark)) else null
+                        ) {
+                            Text(
+                                "Downloaded ($downloadedSearchCount)",
+                                color = if (searchFilterMode == "DOWNLOADED") Ink else SoftText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    displayResults.forEach { track ->
                         TrackListItem(
                             track = track,
                             isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
                             isFavorite = favorites.contains(track.id),
                             isDownloaded = downloads.contains(track.id),
                             isDownloading = downloading.contains(track.id),
-                            onPlay = { playbackManager.playTrack(track, currentVibeTracks) },
+                            onPlay = { playbackManager.playTrack(track, displayResults) },
                             onToggleFavorite = { MusicApplication.instance.toggleFavorite(track.id) },
                             onToggleDownload = { MusicApplication.instance.toggleDownload(track) }
                         )
                     }
                 }
+
+                Spacer(Modifier.height(28.dp))
+
+                // Vibe Mixes Tabs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "PICK A VIBE",
+                        color = SoftText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        "Play Mix",
+                        color = Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            if (currentVibeTracks.isNotEmpty()) {
+                                playbackManager.playTrack(currentVibeTracks.first(), currentVibeTracks)
+                            }
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Horizontal Vibe Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VibesList.forEach { vibe ->
+                        val isSelected = selectedVibe == vibe
+                        Surface(
+                            modifier = Modifier.clickable { selectedVibe = vibe },
+                            color = if (isSelected) Accent else Panel,
+                            shape = RoundedCornerShape(12.dp),
+                            border = if (!isSelected) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark)) else null
+                        ) {
+                            Text(
+                                vibe,
+                                color = if (isSelected) Ink else SoftText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Tracklist for selected Vibe
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Panel),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "$selectedVibe Playlist",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                "${currentVibeTracks.size} Tracks",
+                                color = SoftText,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        currentVibeTracks.forEach { track ->
+                            TrackListItem(
+                                track = track,
+                                isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
+                                isFavorite = favorites.contains(track.id),
+                                isDownloaded = downloads.contains(track.id),
+                                isDownloading = downloading.contains(track.id),
+                                onPlay = { playbackManager.playTrack(track, currentVibeTracks) },
+                                onToggleFavorite = { MusicApplication.instance.toggleFavorite(track.id) },
+                                onToggleDownload = { MusicApplication.instance.toggleDownload(track) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // OFFLINE SECTION
+                OfflineCollectionSection(
+                    downloadedTracks = downloadedTracks,
+                    searchQuery = offlineSearchQuery,
+                    onSearchQueryChange = { offlineSearchQuery = it },
+                    isPlayingTrack = { trackId -> playbackState.currentTrack?.id == trackId && playbackState.isPlaying },
+                    isFavorite = { trackId -> favorites.contains(trackId) },
+                    onPlay = { track -> playbackManager.playTrack(track, downloadedTracks) },
+                    onPlayAll = {
+                        if (downloadedTracks.isNotEmpty()) {
+                            playbackManager.playTrack(downloadedTracks.first(), downloadedTracks)
+                        }
+                    },
+                    onToggleFavorite = { trackId -> MusicApplication.instance.toggleFavorite(trackId) },
+                    onDeleteDownload = { track -> MusicApplication.instance.toggleDownload(track) },
+                    onSwitchToOnline = { sectionMode = MainSectionMode.ONLINE }
+                )
             }
 
             Spacer(Modifier.height(30.dp))
@@ -461,6 +623,171 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                 showSleepTimerDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun OfflineCollectionSection(
+    downloadedTracks: List<MusicTrack>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    isPlayingTrack: (String) -> Boolean,
+    isFavorite: (String) -> Boolean,
+    onPlay: (MusicTrack) -> Unit,
+    onPlayAll: () -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onDeleteDownload: (MusicTrack) -> Unit,
+    onSwitchToOnline: () -> Unit
+) {
+    val filtered = remember(downloadedTracks, searchQuery) {
+        if (searchQuery.isBlank()) downloadedTracks else {
+            val q = searchQuery.trim().lowercase()
+            downloadedTracks.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(24.dp))
+
+        // Offline Header Banner
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "Offline Storage",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "${downloadedTracks.size} Songs Saved • Zero Data",
+                            color = SoftText,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    if (downloadedTracks.isNotEmpty()) {
+                        Button(
+                            onClick = onPlayAll,
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("▶ Play All", color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        if (downloadedTracks.isNotEmpty()) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search your downloaded songs", color = Color(0xFF6B6B7A)) },
+                shape = RoundedCornerShape(14.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Accent,
+                    unfocusedBorderColor = BorderDark,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Accent,
+                    focusedContainerColor = Panel,
+                    unfocusedContainerColor = Panel
+                )
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        "Downloaded Tracks (${filtered.size})",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    filtered.forEach { track ->
+                        TrackListItem(
+                            track = track,
+                            isPlaying = isPlayingTrack(track.id),
+                            isFavorite = isFavorite(track.id),
+                            isDownloaded = true,
+                            isDownloading = false,
+                            onPlay = { onPlay(track) },
+                            onToggleFavorite = { onToggleFavorite(track.id) },
+                            onToggleDownload = { onDeleteDownload(track) }
+                        )
+                    }
+                }
+            }
+        } else {
+            // Empty State
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.size(60.dp),
+                        shape = CircleShape,
+                        color = PanelSecondary
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("💾", fontSize = 26.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "No Offline Songs Stored",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Tap the ↓ download button next to any track in Online Discovery to save it to your local device storage.",
+                        color = SoftText,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Button(
+                        onClick = onSwitchToOnline,
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Explore Online Catalog", color = Ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
     }
 }
 

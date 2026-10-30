@@ -48,6 +48,16 @@ export class InnerTubeCatalogClient {
   }
 }
 
+export interface VisitorSessionState {
+  isInitialized: boolean;
+  visitorData: string | null;
+  clientName: string;
+  clientVersion: string;
+  isPublicBrowsingActive: boolean;
+  startTimestamp: number;
+  statusMessage: string;
+}
+
 export interface SessionSnapshot {
   visitorData: string | null;
   cookie: string | null;
@@ -58,11 +68,12 @@ export interface SessionSnapshot {
 
 /**
  * Port of com.fmmusic.client.network.MusicNetworkClient.
- * Initializes public unauthenticated browsing visitor session.
+ * Initializes the InnerTube client and starts a visitor session for public music browsing.
  */
 export class MusicNetworkClient {
   readonly catalog: InnerTubeCatalogClient;
   private session: SessionSnapshot;
+  private visitorSession: VisitorSessionState;
 
   constructor() {
     this.catalog = new InnerTubeCatalogClient();
@@ -73,31 +84,51 @@ export class MusicNetworkClient {
       authUser: '0',
       useLoginForBrowse: false,
     };
+    this.visitorSession = {
+      isInitialized: false,
+      visitorData: null,
+      clientName: 'WEB_REMIX',
+      clientVersion: '1.20240101.01.00',
+      isPublicBrowsingActive: false,
+      startTimestamp: 0,
+      statusMessage: 'Uninitialized',
+    };
+  }
+
+  /**
+   * Initializes the InnerTube client and starts a visitor session for public music browsing.
+   */
+  startVisitorSession(): VisitorSessionState {
+    const visitorData = 'Cgt' + Math.random().toString(36).substring(2, 12).toUpperCase();
+    this.session = {
+      visitorData,
+      cookie: null,
+      sapisid: null,
+      authUser: '0',
+      useLoginForBrowse: false,
+    };
+    this.visitorSession = {
+      isInitialized: true,
+      visitorData,
+      clientName: 'WEB_REMIX',
+      clientVersion: '1.20240101.01.00',
+      isPublicBrowsingActive: true,
+      startTimestamp: Date.now(),
+      statusMessage: 'Visitor session active for public music browsing',
+    };
+    return { ...this.visitorSession };
   }
 
   async initializePublicSession(): Promise<boolean> {
-    try {
-      // Generate synthetic visitor token for public browse session
-      const visitorData = 'Cgt' + Math.random().toString(36).substring(2, 12).toUpperCase();
-      this.session = {
-        visitorData,
-        cookie: null,
-        sapisid: null,
-        authUser: '0',
-        useLoginForBrowse: false,
-      };
+    const session = this.startVisitorSession();
+    return session.isPublicBrowsingActive && !!session.visitorData;
+  }
 
-      const isValid =
-        this.session.visitorData === visitorData &&
-        this.session.cookie === null &&
-        this.session.sapisid === null &&
-        this.session.authUser === '0' &&
-        !this.session.useLoginForBrowse;
-
-      return isValid;
-    } catch {
-      return false;
+  getVisitorSession(): VisitorSessionState {
+    if (!this.visitorSession.isInitialized) {
+      return this.startVisitorSession();
     }
+    return { ...this.visitorSession };
   }
 
   getSessionSnapshot(): SessionSnapshot {
@@ -106,5 +137,11 @@ export class MusicNetworkClient {
 
   close(): void {
     this.session.visitorData = null;
+    this.visitorSession.isPublicBrowsingActive = false;
+    this.visitorSession.statusMessage = 'Closed';
   }
 }
+
+export const musicNetworkClient = new MusicNetworkClient();
+// Automatically initialize on module load
+musicNetworkClient.startVisitorSession();

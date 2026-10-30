@@ -11,7 +11,8 @@ data class MusicTrack(
     val streamUrl: String = "",
     val lyrics: List<String> = emptyList(),
     val isFavorite: Boolean = false,
-    val isDownloaded: Boolean = false
+    val isDownloaded: Boolean = false,
+    val thumbnailUrl: String = ""
 ) {
     val durationFormatted: String
         get() {

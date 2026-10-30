@@ -2,8 +2,13 @@ package com.fmmusic.client
 
 import com.fmmusic.client.data.MusicCatalogData
 import com.fmmusic.client.model.MusicTrack
+import com.fmmusic.client.network.InnerTubeClientService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,5 +43,12 @@ class MusicAppTest {
         val downloadedTrack = track.copy(isDownloaded = true)
         assertTrue(downloadedTrack.isDownloaded)
         assertFalse(track.isDownloaded)
+    }
+
+    @Test
+    fun testInnerTubeServiceInitialization() = runBlocking {
+        val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
+        assertNotNull(service.innerTube)
+        service.close()
     }
 }

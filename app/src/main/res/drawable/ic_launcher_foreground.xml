@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Radio Wave Arc 1 -->
+    <path
+        android:strokeColor="#B9F36A"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.4"
+        android:strokeLineCap="round"
+        android:pathData="M 28,45 A 26,26 0 0,1 80,45" />
+
+    <!-- Radio Wave Arc 2 -->
+    <path
+        android:strokeColor="#B9F36A"
+        android:strokeWidth="3.0"
+        android:strokeAlpha="0.8"
+        android:strokeLineCap="round"
+        android:pathData="M 36,49 A 18,18 0 0,1 72,49" />
+
+    <!-- Center Badge -->
+    <path
+        android:fillColor="#B9F36A"
+        android:pathData="M 35,52 h 38 a 6,6 0 0 1 6,6 v 18 a 6,6 0 0 1 -6,6 h -38 a 6,6 0 0 1 -6,-6 v -18 a 6,6 0 0 1 6,-6 z" />
+
+    <!-- F Monogram inside Badge -->
+    <path
+        android:fillColor="#111116"
+        android:pathData="M 43,58 h 9 v 3 h -6 v 3 h 5 v 3 h -5 v 6 h -3 z" />
+
+    <!-- M Monogram inside Badge -->
+    <path
+        android:fillColor="#111116"
+        android:pathData="M 55,58 h 3 l 3,6 3,-6 h 3 v 15 h -3 v -9 l -3,6 h -1 l -3,-6 v 9 h -2 z" />
+
+    <!-- Sound frequency bars -->
+    <path
+        android:fillColor="#B9F36A"
+        android:pathData="M 38,88 h 2.5 v 6 h -2.5 z M 43,84 h 2.5 v 10 h -2.5 z M 48,81 h 2.5 v 13 h -2.5 z M 53,85 h 2.5 v 9 h -2.5 z M 58,80 h 2.5 v 14 h -2.5 z M 63,84 h 2.5 v 10 h -2.5 z M 68,88 h 2.5 v 6 h -2.5 z" />
+</vector>

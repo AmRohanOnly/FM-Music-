@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -146,8 +147,25 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
 
     val (greetingText, greetingTag) = remember { getTimeBasedGreeting() }
 
-    val searchResults = remember(searchQuery) {
-        if (searchQuery.isNotBlank()) MusicCatalogData.search(searchQuery) else emptyList()
+    var searchResults by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(searchQuery) {
+        val trimmed = searchQuery.trim()
+        if (trimmed.isNotBlank()) {
+            isSearching = true
+            searchResults = MusicCatalogData.search(trimmed)
+            try {
+                val remoteResults = MusicApplication.instance.innerTubeService.searchTracks(trimmed)
+                if (remoteResults.isNotEmpty()) {
+                    searchResults = remoteResults
+                }
+            } catch (_: Exception) {}
+            isSearching = false
+        } else {
+            searchResults = emptyList()
+            isSearching = false
+        }
     }
 
     val currentVibeTracks = remember(selectedVibe) {
@@ -271,12 +289,23 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "SEARCH RESULTS (${searchResults.size})",
-                        color = SoftText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "SEARCH RESULTS (${searchResults.size})",
+                            color = SoftText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isSearching) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "• InnerTube Searching...",
+                                color = Accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        }
+                    }
                     Text(
                         "Clear",
                         color = Accent,

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A1A24" />
+      <stop offset="50%" stop-color="#111116" />
+      <stop offset="100%" stop-color="#0B0B0E" />
+    </linearGradient>
+
+    <!-- Accent Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#CEFF7F" />
+      <stop offset="50%" stop-color="#B9F36A" />
+      <stop offset="100%" stop-color="#93E034" />
+    </linearGradient>
+
+    <!-- Soft Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Border Glow -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#B9F36A" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#393943" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#B9F36A" stop-opacity="0.8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="16" y="16" width="480" height="480" rx="112" ry="112" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="8" />
+
+  <!-- Ambient Internal Glow Behind Logo -->
+  <circle cx="256" cy="256" r="160" fill="#B9F36A" opacity="0.08" filter="blur(30px)" />
+
+  <!-- Broadcast Radio Waves (Outer & Inner Arcs) -->
+  <path d="M 120 220 A 150 150 0 0 1 392 220" fill="none" stroke="url(#accentGrad)" stroke-width="8" stroke-linecap="round" opacity="0.3" />
+  <path d="M 155 235 A 115 115 0 0 1 357 235" fill="none" stroke="url(#accentGrad)" stroke-width="9" stroke-linecap="round" opacity="0.6" />
+  <path d="M 190 250 A 80 80 0 0 1 322 250" fill="none" stroke="url(#accentGrad)" stroke-width="10" stroke-linecap="round" opacity="0.9" filter="url(#neonGlow)" />
+
+  <!-- Center Accent Badge -->
+  <rect x="146" y="220" width="220" height="150" rx="36" ry="36" fill="url(#accentGrad)" filter="url(#neonGlow)" />
+
+  <!-- Inner FM Monogram Cutout -->
+  <text x="256" y="322" text-anchor="middle" fill="#111116" font-size="94" font-weight="900" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" letter-spacing="-3">FM</text>
+
+  <!-- Sound Frequency Equalizer Bars -->
+  <g transform="translate(166, 396)">
+    <rect x="0" y="24" width="10" height="28" rx="5" fill="#B9F36A" opacity="0.6" />
+    <rect x="22" y="14" width="10" height="38" rx="5" fill="#B9F36A" opacity="0.85" />
+    <rect x="44" y="4" width="10" height="48" rx="5" fill="#B9F36A" />
+    <rect x="66" y="18" width="10" height="34" rx="5" fill="#B9F36A" opacity="0.9" />
+    <rect x="88" y="0" width="10" height="52" rx="5" fill="#B9F36A" filter="url(#neonGlow)" />
+    <rect x="110" y="10" width="10" height="42" rx="5" fill="#B9F36A" />
+    <rect x="132" y="20" width="10" height="32" rx="5" fill="#B9F36A" opacity="0.9" />
+    <rect x="154" y="6" width="10" height="46" rx="5" fill="#B9F36A" />
+    <rect x="170" y="26" width="10" height="26" rx="5" fill="#B9F36A" opacity="0.6" />
+  </g>
+</svg>

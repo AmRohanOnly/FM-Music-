@@ -2,6 +2,7 @@ package com.fmmusic.client
 
 import android.app.Application
 import com.fmmusic.client.model.MusicTrack
+import com.fmmusic.client.network.InnerTubeClientService
 import com.fmmusic.client.playback.ExoPlaybackManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,9 @@ class MusicApplication : Application() {
     lateinit var playbackManager: ExoPlaybackManager
         private set
 
+    lateinit var innerTubeService: InnerTubeClientService
+        private set
+
     private val mutableFavorites = MutableStateFlow<Set<String>>(emptySet())
     val favorites = mutableFavorites.asStateFlow()
 
@@ -34,6 +38,7 @@ class MusicApplication : Application() {
         super.onCreate()
         instance = this
         playbackManager = ExoPlaybackManager(this)
+        innerTubeService = InnerTubeClientService(appScope)
         scanExistingDownloads()
     }
 
@@ -129,6 +134,7 @@ class MusicApplication : Application() {
     }
 
     override fun onTerminate() {
+        innerTubeService.close()
         playbackManager.release()
         super.onTerminate()
     }

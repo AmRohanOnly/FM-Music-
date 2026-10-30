@@ -15,3 +15,48 @@
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 }
+
+@keyframes audio-bounce-1 {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+
+@keyframes audio-bounce-2 {
+  0%, 100% { height: 5px; }
+  50% { height: 22px; }
+}
+
+@keyframes audio-bounce-3 {
+  0%, 100% { height: 3px; }
+  50% { height: 18px; }
+}
+
+@keyframes audio-bounce-4 {
+  0%, 100% { height: 6px; }
+  50% { height: 24px; }
+}
+
+@keyframes audio-bounce-5 {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
+}
+
+.anim-audio-bar-1 {
+  animation: audio-bounce-1 0.65s ease-in-out infinite alternate;
+}
+
+.anim-audio-bar-2 {
+  animation: audio-bounce-2 0.5s ease-in-out 0.1s infinite alternate;
+}
+
+.anim-audio-bar-3 {
+  animation: audio-bounce-3 0.75s ease-in-out 0.2s infinite alternate;
+}
+
+.anim-audio-bar-4 {
+  animation: audio-bounce-4 0.55s ease-in-out 0.05s infinite alternate;
+}
+
+.anim-audio-bar-5 {
+  animation: audio-bounce-5 0.7s ease-in-out 0.15s infinite alternate;
+}

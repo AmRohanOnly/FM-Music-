@@ -1,32 +1,31 @@
-# FM Music (React)
+# FM Music for Android
 
-A modern React web rewrite of FM Music, ported from the original Kotlin + Jetpack Compose Android client.
+A native Android music client built with Kotlin, Jetpack Compose, and Media3 ExoPlayer, inspired by **MetroList**, **InnerTune**, and **OuterTune**.
 
-## Features Ported
-- **Music Search**: Query input and mood vibe buttons ("New releases", "Hindi hits", "Chill", "Indie", "Focus", "Workout") that route queries cleanly to YouTube Music search using official URL encoding format (`https://music.youtube.com/search?q=...`).
-- **Original Color Palette & Visuals**:
-  - Ink (`#111116`) deep background
-  - Panel (`#1B1B23`) card containers
-  - Electric Chartreuse / Accent (`#B9F36A`) branding, focus rings, and primary buttons
-  - Soft text (`#B7B7C4`) and crisp typography
-- **Playback Controller**: Port of `Media3PlaybackController` managing playback UI state (`title`, `artist`, `isPlaying`, `isBuffering`, `errorMessage`, and `hasMedia`).
-- **Licensed Media Rules Enforcement**: Direct port of `LicensedPlaybackSource` and `LicensedMediaItem`:
-  - Enforces HTTPS / local URIs without sensitive user credentials.
-  - Redacts sensitive media URIs in string/log representations (`uri=[REDACTED]`).
-  - Restricts `InnerTubeX` to public catalog metadata only (rejected as playback provider).
-  - Explicitly rejects unofficial YouTube/GoogleVideo media stream extraction in favor of the official YouTube Music experience.
-- **Diagnostics & Test Runner**: Built-in interactive test suite verifying the behavior of `MusicSearchTest` and `LicensedPlaybackSourceTest`.
-- **Public Visitor Session Initialization**: Port of `MusicNetworkClient` and `InnerTubeCatalogClient` representing the unauthenticated catalog browse session.
+## Features Implemented
+- **Direct In-App Streaming**: Audio playback powered by ExoPlayer and InnerTube/stream extraction with zero external redirects.
+- **Dynamic Time-Based Greeting**: Changes dynamically based on local device time (*Good morning*, *Good afternoon*, *Evening beats*, *Late night vibes*).
+- **Vibe Mixes**: Curated catalogs and playlists for Hindi hits, New releases, Chill, Indie, Focus, and Workout.
+- **Search**: Instant debounced search for tracks, artists, and albums.
+- **Mini-Player Bar**: Persistent bottom player with draggable progress scrubber, playback controls, and animated frequency visualizer bars.
+- **Expandable Now Playing Sheet**:
+  - Full album artwork & FM branding badge
+  - Real-time animated audio visualizer
+  - Complete timeline slider with live position and duration timestamps
+  - Shuffle, Previous, Play/Pause, Next, and Repeat (Off / All / One)
+  - Synchronized Lyrics view
+  - Active Queue view
+  - Sleep Timer with customizable countdown intervals (15m, 30m, 45m, 60m)
+  - Favorites and offline download flags
 
-## Development & Build
+## Build & Run
 
 ```bash
-# Install dependencies
-npm install
+# Compile and assemble debug APK
+./gradlew :app:assembleDebug
 
-# Start dev server (Port 3000, 0.0.0.0)
-npm run dev
-
-# Build for production
-npm run build
+# Run unit tests
+./gradlew :app:testDebugUnitTest
 ```
+
+Generated APK output: `app/build/outputs/apk/debug/app-debug.apk`

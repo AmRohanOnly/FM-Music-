@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.FMMusic" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#111116</item>
+        <item name="android:navigationBarColor">#111116</item>
+        <item name="android:windowBackground">#111116</item>
+    </style>
+</resources>

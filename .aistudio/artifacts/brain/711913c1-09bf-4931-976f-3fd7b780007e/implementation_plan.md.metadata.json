@@ -1,0 +1,6 @@
+{
+  "summary":  "Architectural roadmap and execution plan for rebuilding FM Music into a full-featured native Android music streaming client (MetroList, InnerTune, and OuterTune style). Covers Kotlin & Jetpack Compose UI, Media3 MediaSession background service with notification lockscreen controls, InnerTube/Piped audio stream extraction, Room database for offline downloads and playlists, synchronized time-synced lyrics, and sleep timer.",
+  "updatedAt":  "2026-10-30T16:57:28.759782535Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

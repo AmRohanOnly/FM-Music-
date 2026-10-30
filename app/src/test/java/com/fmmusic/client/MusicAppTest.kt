@@ -31,4 +31,12 @@ class MusicAppTest {
         val hindiTracks = MusicCatalogData.curatedTracks.filter { it.vibe == "Hindi hits" }
         assertTrue("Expected Hindi hits in catalog", hindiTracks.size >= 3)
     }
+
+    @Test
+    fun testTrackDownloadStateHandling() {
+        val track = MusicCatalogData.curatedTracks.first()
+        val downloadedTrack = track.copy(isDownloaded = true)
+        assertTrue(downloadedTrack.isDownloaded)
+        assertFalse(track.isDownloaded)
+    }
 }

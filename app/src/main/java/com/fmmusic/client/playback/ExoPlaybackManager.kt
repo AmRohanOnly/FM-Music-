@@ -1,12 +1,14 @@
 package com.fmmusic.client.playback
 
 import android.content.Context
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.fmmusic.client.MusicApplication
 import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.model.PlaybackUiState
 import com.fmmusic.client.model.RepeatMode
@@ -97,8 +99,15 @@ class ExoPlaybackManager(context: Context) {
             )
         }
 
+        val localFile = MusicApplication.instance.getLocalTrackFile(track.id)
+        val playbackUri = if (localFile != null && localFile.exists()) {
+            Uri.fromFile(localFile)
+        } else {
+            Uri.parse(track.streamUrl)
+        }
+
         val mediaItem = MediaItem.Builder()
-            .setUri(track.streamUrl)
+            .setUri(playbackUri)
             .setMediaId(track.id)
             .setMediaMetadata(
                 MediaMetadata.Builder()

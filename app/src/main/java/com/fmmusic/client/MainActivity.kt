@@ -137,6 +137,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     val playbackState by playbackManager.state.collectAsState()
     val favorites by MusicApplication.instance.favorites.collectAsState()
     val downloads by MusicApplication.instance.downloads.collectAsState()
+    val downloading by MusicApplication.instance.downloading.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedVibe by remember { mutableStateOf("Hindi hits") }
@@ -291,9 +292,10 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                         isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
                         isFavorite = favorites.contains(track.id),
                         isDownloaded = downloads.contains(track.id),
+                        isDownloading = downloading.contains(track.id),
                         onPlay = { playbackManager.playTrack(track, searchResults) },
                         onToggleFavorite = { MusicApplication.instance.toggleFavorite(track.id) },
-                        onToggleDownload = { MusicApplication.instance.toggleDownload(track.id) }
+                        onToggleDownload = { MusicApplication.instance.toggleDownload(track) }
                     )
                 }
             }
@@ -386,9 +388,10 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                             isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
                             isFavorite = favorites.contains(track.id),
                             isDownloaded = downloads.contains(track.id),
+                            isDownloading = downloading.contains(track.id),
                             onPlay = { playbackManager.playTrack(track, currentVibeTracks) },
                             onToggleFavorite = { MusicApplication.instance.toggleFavorite(track.id) },
-                            onToggleDownload = { MusicApplication.instance.toggleDownload(track.id) }
+                            onToggleDownload = { MusicApplication.instance.toggleDownload(track) }
                         )
                     }
                 }
@@ -400,9 +403,12 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
 
     // Full Now Playing Sheet
     if (showNowPlayingSheet && playbackState.currentTrack != null) {
+        val curTrack = playbackState.currentTrack!!
         NowPlayingSheet(
             state = playbackState,
-            isFavorite = favorites.contains(playbackState.currentTrack?.id.orEmpty()),
+            isFavorite = favorites.contains(curTrack.id),
+            isDownloaded = downloads.contains(curTrack.id),
+            isDownloading = downloading.contains(curTrack.id),
             onDismiss = { showNowPlayingSheet = false },
             onTogglePlay = playbackManager::togglePlayPause,
             onSeek = playbackManager::seekTo,
@@ -411,9 +417,8 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
             onToggleShuffle = playbackManager::toggleShuffle,
             onToggleRepeat = playbackManager::toggleRepeat,
             onOpenSleepTimer = { showSleepTimerDialog = true },
-            onToggleFavorite = {
-                playbackState.currentTrack?.id?.let { MusicApplication.instance.toggleFavorite(it) }
-            }
+            onToggleFavorite = { MusicApplication.instance.toggleFavorite(curTrack.id) },
+            onToggleDownload = { MusicApplication.instance.toggleDownload(curTrack) }
         )
     }
 
@@ -449,6 +454,7 @@ private fun TrackListItem(
     isPlaying: Boolean,
     isFavorite: Boolean,
     isDownloaded: Boolean,
+    isDownloading: Boolean = false,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleDownload: () -> Unit
@@ -514,8 +520,53 @@ private fun TrackListItem(
                 fontSize = 12.sp
             )
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
 
+            // Download Button
+            Surface(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clickable(onClick = onToggleDownload),
+                shape = CircleShape,
+                color = when {
+                    isDownloaded -> Accent
+                    isDownloading -> Color(0xFF383848)
+                    else -> PanelSecondary
+                }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    when {
+                        isDownloading -> {
+                            Text(
+                                "⋯",
+                                color = Accent,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                        isDownloaded -> {
+                            Text(
+                                "✓",
+                                color = Ink,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        else -> {
+                            Text(
+                                "↓",
+                                color = SoftText,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            // Favorite Button
             Surface(
                 modifier = Modifier
                     .size(32.dp)
@@ -640,6 +691,8 @@ private fun MiniPlayerBar(
 private fun NowPlayingSheet(
     state: PlaybackUiState,
     isFavorite: Boolean,
+    isDownloaded: Boolean,
+    isDownloading: Boolean = false,
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -648,7 +701,8 @@ private fun NowPlayingSheet(
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
     onOpenSleepTimer: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onToggleDownload: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableStateOf(0) }
@@ -751,6 +805,27 @@ private fun NowPlayingSheet(
                             )
                         }
 
+                        // Download button
+                        Button(
+                            onClick = onToggleDownload,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDownloaded) Accent else PanelSecondary
+                            ),
+                            shape = CircleShape,
+                            modifier = Modifier.size(42.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                if (isDownloading) "⋯" else if (isDownloaded) "✓" else "↓",
+                                color = if (isDownloaded) Ink else Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        // Favorite button
                         Button(
                             onClick = onToggleFavorite,
                             colors = ButtonDefaults.buttonColors(containerColor = if (isFavorite) Accent else PanelSecondary),

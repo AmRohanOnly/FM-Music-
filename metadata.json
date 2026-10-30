@@ -1,0 +1,8 @@
+{
+  "name": "FM Music",
+  "description": "Music discovery and player client with YouTube Music search and licensed playback architecture.",
+  "requestFeedback": false,
+  "userFacing": true,
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

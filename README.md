@@ -1,21 +1,32 @@
-# FM Music
+# FM Music (React)
 
-A native Android music-discovery starter built with Kotlin and Jetpack Compose.
+A modern React web rewrite of FM Music, ported from the original Kotlin + Jetpack Compose Android client.
 
-Searches and mood shortcuts open the official YouTube Music search page with an Android `ACTION_VIEW` intent. If YouTube Music is installed, Android can open it; otherwise, the configured browser handles the link. Playback, ads, subscriptions, and content availability remain in YouTube's official experience.
+## Features Ported
+- **Music Search**: Query input and mood vibe buttons ("New releases", "Hindi hits", "Chill", "Indie", "Focus", "Workout") that route queries cleanly to YouTube Music search using official URL encoding format (`https://music.youtube.com/search?q=...`).
+- **Original Color Palette & Visuals**:
+  - Ink (`#111116`) deep background
+  - Panel (`#1B1B23`) card containers
+  - Electric Chartreuse / Accent (`#B9F36A`) branding, focus rings, and primary buttons
+  - Soft text (`#B7B7C4`) and crisp typography
+- **Playback Controller**: Port of `Media3PlaybackController` managing playback UI state (`title`, `artist`, `isPlaying`, `isBuffering`, `errorMessage`, and `hasMedia`).
+- **Licensed Media Rules Enforcement**: Direct port of `LicensedPlaybackSource` and `LicensedMediaItem`:
+  - Enforces HTTPS / local URIs without sensitive user credentials.
+  - Redacts sensitive media URIs in string/log representations (`uri=[REDACTED]`).
+  - Restricts `InnerTubeX` to public catalog metadata only (rejected as playback provider).
+  - Explicitly rejects unofficial YouTube/GoogleVideo media stream extraction in favor of the official YouTube Music experience.
+- **Diagnostics & Test Runner**: Built-in interactive test suite verifying the behavior of `MusicSearchTest` and `LicensedPlaybackSourceTest`.
+- **Public Visitor Session Initialization**: Port of `MusicNetworkClient` and `InnerTubeCatalogClient` representing the unauthenticated catalog browse session.
 
-This starter does not play or extract audio inside the app. YouTube does not provide a maintained native Android music-playback SDK for a new client; YouTube Data API search also requires a developer API key. The app avoids unofficial stream extraction, ad blocking, and ad bypass.
+## Development & Build
 
-## Catalog networking
+```bash
+# Install dependencies
+npm install
 
-The app initializes a reusable Ktor `HttpClient` using the OkHttp engine, JSON content negotiation, and bounded connection/request/socket timeouts. On application startup, it asks InnerTubeX to fetch and store YouTube's public visitor data for an unauthenticated browsing session. `MusicApplication.networkClient.catalog.search(query)` wraps InnerTubeX search metadata only; no InnerTubeX stream extraction or playback APIs are exposed by the catalog wrapper. Licensed playback still requires selecting and integrating a provider.
+# Start dev server (Port 3000, 0.0.0.0)
+npm run dev
 
-## In-app playback
-
-The app includes an AndroidX Media3 ExoPlayer controller and a Compose player bar. A future licensed provider can implement `LicensedPlaybackSource` and return a `LicensedMediaItem`; the player boundary rejects InnerTubeX as a playback provider and refuses YouTube media hosts so YouTube playback stays in its official app/browser. No provider is currently connected, so the in-app play control stays disabled until one is integrated. The player runs only while the activity is alive; a background playback service is not included.
-
-InnerTubeX `v0.11.2` is published on JitPack under GPL-3.0 and requires the Kotlin 2.4.21 / Ktor 3.6.0 toolchain used here. Before distributing an app that bundles this dependency, review its GPL-3.0 source and notice obligations and reconcile them with this repository's MIT license.
-
-## Build
-
-Open the project in Android Studio, or run `gradlew.bat :app:testDebugUnitTest` and `gradlew.bat :app:assembleDebug` on Windows with JDK 17 or newer and Android SDK Platform 37 installed.
+# Build for production
+npm run build
+```

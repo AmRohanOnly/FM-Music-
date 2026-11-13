@@ -24,7 +24,17 @@ import {
   Clock,
   Sliders,
   Shuffle,
+  Smartphone,
+  RefreshCw,
+  ExternalLink,
+  Package,
 } from 'lucide-react';
+import {
+  AppUpdateCheckResult,
+  CURRENT_APP_VERSION,
+  formatApkSize,
+  sanitizeGithubRepo,
+} from '../services/appUpdateService';
 import { EqualizerPanel } from './EqualizerPanel';
 import { Track } from '../data/musicCatalog';
 import {
@@ -63,6 +73,13 @@ interface SettingsModalProps {
   onRestoreBackup: (backup: FmMusicBackup, mode: RestoreMode) => void;
   onOpenDiagnostics: () => void;
   onNotify: (message: string) => void;
+  githubRepo: string;
+  onSaveGithubRepo: (repo: string) => void;
+  updateCheckResult: AppUpdateCheckResult | null;
+  updateCheckError: string | null;
+  isCheckingUpdate: boolean;
+  onCheckForUpdates: (repoOverride?: string) => void;
+  onOpenUpdatePrompt: () => void;
 }
 
 function formatCountdown(totalSec: number): string {
@@ -91,8 +108,15 @@ export function SettingsModal({
   onRestoreBackup,
   onOpenDiagnostics,
   onNotify,
+  githubRepo,
+  onSaveGithubRepo,
+  updateCheckResult,
+  updateCheckError,
+  isCheckingUpdate,
+  onCheckForUpdates,
+  onOpenUpdatePrompt,
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'themes' | 'player' | 'eq' | 'backup'>('themes');
+  const [activeTab, setActiveTab] = useState<'themes' | 'player' | 'eq' | 'backup' | 'apk'>('themes');
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('merge');
   const [pasteInput, setPasteInput] = useState('');
   const [showPasteArea, setShowPasteArea] = useState(false);
@@ -102,8 +126,13 @@ export function SettingsModal({
   const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
   const [copiedJson, setCopiedJson] = useState(false);
   const [customSleepMin, setCustomSleepMin] = useState('');
+  const [repoInput, setRepoInput] = useState(githubRepo);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setRepoInput(githubRepo);
+  }, [githubRepo, isOpen]);
 
   if (!isOpen) return null;
 
@@ -240,10 +269,10 @@ export function SettingsModal({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="mt-4 p-1 rounded-2xl liquid-glass grid grid-cols-4 gap-1">
+        <div className="mt-4 p-1 rounded-2xl liquid-glass grid grid-cols-5 gap-1">
           <button
             onClick={() => setActiveTab('themes')}
-            className={`min-h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`min-h-11 px-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               activeTab === 'themes'
                 ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] shadow-sm'
                 : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
@@ -254,7 +283,7 @@ export function SettingsModal({
           </button>
           <button
             onClick={() => setActiveTab('player')}
-            className={`min-h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`min-h-11 px-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               activeTab === 'player'
                 ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] shadow-sm'
                 : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
@@ -265,18 +294,18 @@ export function SettingsModal({
           </button>
           <button
             onClick={() => setActiveTab('eq')}
-            className={`min-h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`min-h-11 px-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               activeTab === 'eq'
                 ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] shadow-sm'
                 : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
             }`}
           >
             <Sliders className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Equalizer</span>
+            <span className="truncate">EQ</span>
           </button>
           <button
             onClick={() => setActiveTab('backup')}
-            className={`min-h-11 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`min-h-11 px-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
               activeTab === 'backup'
                 ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] shadow-sm'
                 : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
@@ -284,6 +313,20 @@ export function SettingsModal({
           >
             <FileJson className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">Backup</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('apk')}
+            className={`min-h-11 px-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer relative ${
+              activeTab === 'apk'
+                ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] shadow-sm'
+                : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">APK</span>
+            {updateCheckResult?.updateAvailable && activeTab !== 'apk' && (
+              <span className="w-2 h-2 rounded-full bg-[var(--fm-accent)] absolute top-2 right-2" />
+            )}
           </button>
         </div>
 
@@ -961,6 +1004,159 @@ export function SettingsModal({
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'apk' && (
+            <div className="space-y-4">
+              {/* Direct Android APK Download */}
+              <div className="liquid-glass rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <Smartphone className="w-5 h-5 text-[var(--fm-accent)] shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-bold">FM Music for Android (.apk)</h3>
+                      <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-relaxed">
+                        Native Kotlin + Jetpack Compose + Media3 ExoPlayer app with built-in GitHub auto-update alerts.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-[var(--fm-accent)] shrink-0">
+                    v{CURRENT_APP_VERSION}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                  <a
+                    href="/api/download-apk"
+                    download="FM-Music-Android.apk"
+                    onClick={() => onNotify('Downloading FM-Music-Android.apk...')}
+                    className="min-h-11 px-4 py-2.5 rounded-xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm hover:opacity-95 transition-opacity"
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span>Download Android APK</span>
+                  </a>
+
+                  {sanitizeGithubRepo(repoInput) && (
+                    <a
+                      href={`https://github.com/${sanitizeGithubRepo(repoInput)}?tab=packages`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-11 px-4 py-2.5 rounded-xl liquid-glass-button font-semibold text-xs sm:text-sm inline-flex items-center gap-2 text-[var(--fm-text)]"
+                    >
+                      <Package className="w-4 h-4 text-[var(--fm-accent)] shrink-0" />
+                      <span>GitHub Packages</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-[var(--fm-text-muted)] shrink-0" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* GitHub Packages & Releases Auto-Update Config */}
+              <div className="liquid-glass rounded-2xl p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold">GitHub Auto-Update & Packages Repository</h4>
+                  <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-relaxed">
+                    Every push or release builds a signed APK via GitHub Actions, publishes it to GitHub Packages, and notifies older APKs when a newer version is available.
+                  </p>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const cleaned = sanitizeGithubRepo(repoInput);
+                    if (!cleaned) {
+                      onNotify('Enter repository as owner/repo (e.g. alex/fm-music)');
+                      return;
+                    }
+                    setRepoInput(cleaned);
+                    onSaveGithubRepo(cleaned);
+                    onCheckForUpdates(cleaned);
+                  }}
+                  className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    value={repoInput}
+                    onChange={(e) => setRepoInput(e.target.value)}
+                    placeholder="owner/repo (e.g. yourname/fm-music)"
+                    className="flex-1 h-11 px-3.5 rounded-xl liquid-glass-input text-xs sm:text-sm text-[var(--fm-text)] placeholder-[var(--fm-text-muted)]/60 focus:outline-none focus:border-[var(--fm-accent)] font-mono"
+                    aria-label="GitHub repository owner and name"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isCheckingUpdate}
+                    className="min-h-11 px-4 rounded-xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+                    <span>{isCheckingUpdate ? 'Checking...' : 'Check Updates'}</span>
+                  </button>
+                </form>
+
+                {updateCheckError && (
+                  <div className="p-3 rounded-xl bg-red-500/15 border border-red-400/40 flex items-start gap-2 text-xs">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{updateCheckError}</span>
+                  </div>
+                )}
+
+                {updateCheckResult && !updateCheckError && (
+                  <div className="p-3.5 rounded-xl bg-[var(--fm-input-bg)] border border-[var(--fm-glass-border)] space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[var(--fm-text)]">
+                        {updateCheckResult.updateAvailable
+                          ? `New Update Available: v${updateCheckResult.latestVersion}`
+                          : updateCheckResult.tagName
+                          ? `Up to date (v${updateCheckResult.latestVersion})`
+                          : `Connected to ${updateCheckResult.repo}`}
+                      </span>
+                      {updateCheckResult.sizeBytes > 0 && (
+                        <span className="font-mono text-[var(--fm-text-muted)]">
+                          {formatApkSize(updateCheckResult.sizeBytes)}
+                        </span>
+                      )}
+                    </div>
+
+                    {!updateCheckResult.tagName && (
+                      <p className="text-[var(--fm-text-muted)] leading-relaxed">
+                        No GitHub Releases published yet. Push your code to GitHub to run the Android APK workflow automatically.
+                      </p>
+                    )}
+
+                    {updateCheckResult.updateAvailable && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          onClick={onOpenUpdatePrompt}
+                          className="min-h-10 px-3.5 rounded-xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-xs cursor-pointer"
+                        >
+                          View Update Prompt
+                        </button>
+                        {updateCheckResult.apkDownloadUrl && (
+                          <a
+                            href={updateCheckResult.apkDownloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-h-10 px-3.5 rounded-xl liquid-glass-button font-semibold text-xs inline-flex items-center gap-1.5"
+                          >
+                            <Download className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
+                            <span>Latest Release APK</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-[var(--fm-glass-border)] space-y-1 text-xs text-[var(--fm-text-muted)]">
+                  <p className="font-semibold text-[var(--fm-text)]">How future updates prompt older APKs:</p>
+                  <p>
+                    1. Workflow <span className="font-mono text-[var(--fm-text)]">.github/workflows/android-apk-release.yml</span> builds the release APK, uploads it to GitHub Packages (<span className="font-mono text-[var(--fm-text)]">com.fmmusic:fm-music-android</span>), and attaches <span className="font-mono text-[var(--fm-text)]">update-manifest.json</span> to GitHub Releases.
+                  </p>
+                  <p>
+                    2. Older installed APKs check the latest release on startup and display a &ldquo;New Update Available&rdquo; dialog with one-tap APK download &amp; install.
+                  </p>
+                </div>
               </div>
             </div>
           )}

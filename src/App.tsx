@@ -42,6 +42,9 @@ import {
   SlidersHorizontal,
   RefreshCw,
   Clock,
+  Smartphone,
+  Package,
+  ExternalLink,
 } from 'lucide-react';
 import {
   musicNetworkClient,
@@ -83,6 +86,16 @@ import {
 import { TrackArtwork } from './components/TrackArtwork';
 import { PlaylistPickerModal } from './components/PlaylistPickerModal';
 import { SettingsModal, RestoreMode } from './components/SettingsModal';
+import {
+  AppUpdateCheckResult,
+  CURRENT_APP_VERSION,
+  checkAppUpdate,
+  formatApkSize,
+  loadSkippedReleaseTag,
+  loadStoredGithubRepo,
+  saveSkippedReleaseTag,
+  saveStoredGithubRepo,
+} from './services/appUpdateService';
 
 interface GreetingInfo {
   heading: string;
@@ -251,6 +264,11 @@ export default function App() {
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadSearchHistory());
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [mobileNavTab, setMobileNavTab] = useState<'home' | 'library' | 'offline' | 'queue'>('home');
+  const [githubRepo, setGithubRepo] = useState<string>(() => loadStoredGithubRepo());
+  const [updateCheckResult, setUpdateCheckResult] = useState<AppUpdateCheckResult | null>(null);
+  const [updateCheckError, setUpdateCheckError] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [showUpdatePromptModal, setShowUpdatePromptModal] = useState(false);
 
   const notificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -602,6 +620,19 @@ export default function App() {
       })
       .catch(() => {});
 
+    const storedRepo = loadStoredGithubRepo();
+    if (storedRepo) {
+      checkAppUpdate(storedRepo, CURRENT_APP_VERSION)
+        .then((res) => {
+          setUpdateCheckResult(res);
+          const skippedTag = loadSkippedReleaseTag();
+          if (res.updateAvailable && res.tagName && res.tagName !== skippedTag) {
+            setShowUpdatePromptModal(true);
+          }
+        })
+        .catch(() => {});
+    }
+
     const timer = setInterval(() => {
       setGreetingInfo(getTimeBasedGreeting());
     }, 60000);
@@ -612,6 +643,41 @@ export default function App() {
       if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
     };
   }, []);
+
+  const handleSaveGithubRepo = (repo: string) => {
+    saveStoredGithubRepo(repo);
+    setGithubRepo(repo);
+    setUpdateCheckError(null);
+  };
+
+  const handleCheckForUpdates = async (repoOverride?: string) => {
+    const targetRepo = (repoOverride ?? githubRepo).trim();
+    if (!targetRepo) {
+      setUpdateCheckError('Enter a GitHub repository in owner/repo format.');
+      return;
+    }
+
+    setIsCheckingUpdate(true);
+    setUpdateCheckError(null);
+    try {
+      const res = await checkAppUpdate(targetRepo, CURRENT_APP_VERSION);
+      setUpdateCheckResult(res);
+      if (res.updateAvailable) {
+        setShowUpdatePromptModal(true);
+        showToast(`New update available: v${res.latestVersion}`);
+      } else if (res.tagName) {
+        showToast(`You are on the latest version (v${res.latestVersion})`);
+      } else {
+        showToast(`Connected to ${res.repo} — no GitHub releases published yet`);
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Could not check GitHub for updates.';
+      setUpdateCheckError(msg);
+      showToast(msg);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const handleRestartVisitorSession = () => {
     const session = musicNetworkClient.startVisitorSession();
@@ -848,6 +914,17 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {updateCheckResult?.updateAvailable && (
+              <button
+                onClick={() => setShowUpdatePromptModal(true)}
+                className="min-h-10 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title={`Update available: v${updateCheckResult.latestVersion}`}
+              >
+                <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                <span>Update v{updateCheckResult.latestVersion}</span>
+              </button>
+            )}
+
             <button
               onClick={() => setShowDiagnostics(true)}
               className="hidden md:flex min-h-10 px-3 py-1.5 rounded-full text-xs font-semibold liquid-glass-button text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] items-center gap-1.5 cursor-pointer"
@@ -860,7 +937,7 @@ export default function App() {
             <button
               onClick={() => setShowSettingsModal(true)}
               className="min-h-11 min-w-11 px-3 sm:px-3.5 rounded-full text-xs sm:text-sm font-semibold liquid-glass-button text-[var(--fm-text)] flex items-center justify-center gap-1.5 cursor-pointer"
-              title="Settings, Themes, Player Customization & Backup"
+              title="Settings, Themes, Player Customization, Backup & Android APK"
               aria-label="Open Settings"
             >
               <Settings className="w-4 h-4 text-[var(--fm-accent)]" />
@@ -2589,6 +2666,16 @@ export default function App() {
         onRestoreBackup={handleRestoreBackup}
         onOpenDiagnostics={() => setShowDiagnostics(true)}
         onNotify={showToast}
+        githubRepo={githubRepo}
+        onSaveGithubRepo={handleSaveGithubRepo}
+        updateCheckResult={updateCheckResult}
+        updateCheckError={updateCheckError}
+        isCheckingUpdate={isCheckingUpdate}
+        onCheckForUpdates={handleCheckForUpdates}
+        onOpenUpdatePrompt={() => {
+          setShowSettingsModal(false);
+          setShowUpdatePromptModal(true);
+        }}
       />
 
       {/* Add to Playlist Modal */}
@@ -2764,6 +2851,110 @@ export default function App() {
                 className="min-h-10 px-5 py-2 bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold rounded-xl text-xs cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Android APK Update Available Prompt */}
+      {showUpdatePromptModal && updateCheckResult && (
+        <div
+          className="fixed inset-0 bg-black/65 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowUpdatePromptModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="liquid-glass-strong w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-scale-in space-y-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] flex items-center justify-center shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold tracking-tight">New Update Available</h3>
+                  <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 font-mono">
+                    v{updateCheckResult.currentVersion} → v{updateCheckResult.latestVersion}
+                    {updateCheckResult.sizeBytes > 0
+                      ? ` • ${formatApkSize(updateCheckResult.sizeBytes)}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUpdatePromptModal(false)}
+                className="w-10 h-10 rounded-full liquid-glass-button flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer shrink-0"
+                aria-label="Close update prompt"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[var(--fm-input-bg)] border border-[var(--fm-glass-border)] max-h-48 overflow-y-auto">
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--fm-accent)] mb-1.5">
+                {updateCheckResult.releaseTitle || `Release v${updateCheckResult.latestVersion}`}
+              </p>
+              <p className="text-xs text-[var(--fm-text-muted)] whitespace-pre-line leading-relaxed">
+                {updateCheckResult.releaseNotes ||
+                  'A newer FM Music Android APK release is ready with the latest playback improvements and bug fixes.'}
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              {updateCheckResult.apkDownloadUrl ? (
+                <a
+                  href={updateCheckResult.apkDownloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => showToast(`Downloading FM Music v${updateCheckResult.latestVersion} APK...`)}
+                  className="min-h-12 w-full px-4 rounded-2xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:opacity-95 transition-opacity"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Updated APK</span>
+                </a>
+              ) : (
+                <a
+                  href={updateCheckResult.releasePageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-12 w-full px-4 rounded-2xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-sm flex items-center justify-center gap-2 shadow-md"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Open GitHub Release</span>
+                </a>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <a
+                  href={updateCheckResult.packagesUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold flex items-center justify-center gap-1.5"
+                >
+                  <Package className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
+                  <span>GitHub Packages</span>
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (updateCheckResult.tagName) {
+                      saveSkippedReleaseTag(updateCheckResult.tagName);
+                    }
+                    setShowUpdatePromptModal(false);
+                    showToast(`Skipped v${updateCheckResult.latestVersion}`);
+                  }}
+                  className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
+                >
+                  Skip Version
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowUpdatePromptModal(false)}
+                className="min-h-10 w-full text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
+              >
+                Remind Me Later
               </button>
             </div>
           </div>

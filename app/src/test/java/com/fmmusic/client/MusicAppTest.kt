@@ -3,6 +3,7 @@ package com.fmmusic.client
 import com.fmmusic.client.data.MusicCatalogData
 import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.network.InnerTubeClientService
+import com.fmmusic.client.update.AppUpdateManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -79,5 +80,17 @@ class MusicAppTest {
         assertTrue("Expected valid audio bitrate", streamInfo.bitrate > 0)
         assertTrue("Expected audio mime type", streamInfo.mimeType.contains("audio"))
         service.close()
+    }
+
+    @Test
+    fun testAppUpdateVersionComparison() {
+        assertTrue(AppUpdateManager.isNewerVersion("v1.0.2", 2, "1.0.0", 1))
+        assertTrue(AppUpdateManager.isNewerVersion("1.1.0", null, "1.0.9", 5))
+        assertFalse(AppUpdateManager.isNewerVersion("1.0.0", 1, "1.0.0", 1))
+        assertFalse(AppUpdateManager.isNewerVersion("0.9.5", 1, "1.0.0", 2))
+        assertEquals(
+            "owner/fm-music",
+            AppUpdateManager.sanitizeRepoSlug("https://github.com/owner/fm-music.git")
+        )
     }
 }

@@ -6,18 +6,24 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val appVersionCode = (project.findProperty("FM_VERSION_CODE")?.toString()?.toIntOrNull()) ?: 1
+val appVersionName = (project.findProperty("FM_VERSION_NAME")?.toString()?.takeIf { it.isNotBlank() }) ?: "1.0.0"
+val githubRepo = (project.findProperty("FM_GITHUB_REPO")?.toString()?.takeIf { it.isNotBlank() }) ?: ""
+
 android {
     namespace = "com.fmmusic.client"
-    compileSdk = 37
-    buildToolsVersion = "36.0.0"
+    compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.fmmusic.client"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        targetSdk = 35
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GITHUB_REPO", "\"${githubRepo.replace("\"", "\\\"")}\"")
     }
 
     signingConfigs {
@@ -27,16 +33,35 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        create("release") {
+            val envKeystore = System.getenv("FM_SIGN_KEYSTORE")
+            if (!envKeystore.isNullOrBlank() && file("${rootDir}/$envKeystore").exists()) {
+                storeFile = file("${rootDir}/$envKeystore")
+                storePassword = System.getenv("FM_SIGN_STORE_PASS") ?: "android"
+                keyAlias = System.getenv("FM_SIGN_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("FM_SIGN_KEY_PASS") ?: "android"
+            } else {
+                storeFile = file("${rootDir}/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
     }
 
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
         }
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -54,6 +79,7 @@ kotlin {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.02.02")
     implementation(composeBom)
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "FM Music",
+  "short_name": "FM Music",
+  "description": "Music discovery, full-length streaming, equalizer, synced lyrics, and Android APK companion.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#09090e",
+  "theme_color": "#09090e",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

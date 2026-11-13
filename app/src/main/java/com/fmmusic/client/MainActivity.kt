@@ -39,8 +39,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -77,6 +79,8 @@ import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.model.PlaybackUiState
 import com.fmmusic.client.model.RepeatMode
 import com.fmmusic.client.playback.ExoPlaybackManager
+import com.fmmusic.client.update.AppUpdateUiState
+import com.fmmusic.client.update.ReleaseUpdateInfo
 import java.util.Calendar
 
 private val Ink = Color(0xFF111116)
@@ -144,6 +148,8 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     val downloads by MusicApplication.instance.downloads.collectAsState()
     val downloading by MusicApplication.instance.downloading.collectAsState()
     val visitorSession by MusicApplication.instance.innerTubeService.sessionState.collectAsState()
+    val updateManager = MusicApplication.instance.updateManager
+    val updateState by updateManager.state.collectAsState()
 
     var sectionMode by remember { mutableStateOf(MainSectionMode.ONLINE) }
     var searchFilterMode by remember { mutableStateOf("ALL") }
@@ -159,6 +165,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     var selectedVibe by remember { mutableStateOf("Hindi hits") }
     var showNowPlayingSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showUpdateSettingsDialog by remember { mutableStateOf(false) }
 
     val (greetingText, greetingTag) = remember { getTimeBasedGreeting() }
 
@@ -272,13 +279,26 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                     }
 
                     Surface(
-                        color = Panel,
+                        color = if (updateState.availableUpdate != null) Accent else Panel,
                         shape = RoundedCornerShape(12.dp),
-                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                        border = if (updateState.availableUpdate == null) {
+                            CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
+                        } else null,
+                        modifier = Modifier.clickable {
+                            if (updateState.availableUpdate != null) {
+                                updateManager.openPromptIfAvailable()
+                            } else {
+                                showUpdateSettingsDialog = true
+                            }
+                        }
                     ) {
                         Text(
-                            greetingTag.uppercase(),
-                            color = Accent,
+                            if (updateState.availableUpdate != null) {
+                                "UPDATE v${updateState.availableUpdate?.versionName}"
+                            } else {
+                                "v${updateState.currentVersionName}"
+                            },
+                            color = if (updateState.availableUpdate != null) Ink else Accent,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -621,6 +641,42 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
             onSetTimer = { mins ->
                 playbackManager.setSleepTimer(mins)
                 showSleepTimerDialog = false
+            }
+        )
+    }
+
+    // Automatic In-App "New Update Available" Prompt for Older APK Versions
+    val pendingRelease = updateState.availableUpdate
+    if (updateState.showPromptDialog && pendingRelease != null) {
+        NewUpdateAvailableDialog(
+            state = updateState,
+            release = pendingRelease,
+            onUpdateNow = { updateManager.downloadAndInstallUpdate(pendingRelease) },
+            onDownloadInBrowser = { updateManager.openInBrowser(pendingRelease.apkDownloadUrl) },
+            onSkipVersion = { updateManager.skipUpdateVersion(pendingRelease.tagName) },
+            onLater = { updateManager.dismissPrompt() }
+        )
+    }
+
+    // App Version & GitHub Releases Update Checker Dialog
+    if (showUpdateSettingsDialog) {
+        AppUpdateSettingsDialog(
+            state = updateState,
+            onSaveRepo = { updateManager.setGithubRepo(it) },
+            onCheckNow = { updateManager.checkForUpdates(forceManual = true) },
+            onOpenAvailableUpdate = {
+                showUpdateSettingsDialog = false
+                updateManager.openPromptIfAvailable()
+            },
+            onOpenPackagesPage = {
+                val repo = updateState.githubRepo.trim()
+                if (repo.isNotBlank()) {
+                    updateManager.openInBrowser("https://github.com/$repo?tab=packages")
+                }
+            },
+            onDismiss = {
+                updateManager.clearStatusMessages()
+                showUpdateSettingsDialog = false
             }
         )
     }
@@ -1517,3 +1573,234 @@ private fun SleepTimerDialog(
         containerColor = Panel
     )
 }
+
+@Composable
+private fun NewUpdateAvailableDialog(
+    state: AppUpdateUiState,
+    release: ReleaseUpdateInfo,
+    onUpdateNow: () -> Unit,
+    onDownloadInBrowser: () -> Unit,
+    onSkipVersion: () -> Unit,
+    onLater: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!state.isDownloading) onLater() },
+        containerColor = Panel,
+        title = {
+            Column {
+                Text(
+                    "New Update Available",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "v${state.currentVersionName}  →  v${release.versionName}  •  ${release.sizeFormatted}",
+                    color = Accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "What's New:",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    release.releaseNotes,
+                    color = SoftText,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+
+                if (state.isDownloading) {
+                    Spacer(Modifier.height(14.dp))
+                    val pct = (state.downloadProgress * 100).toInt().coerceIn(0, 100)
+                    Text(
+                        "Downloading APK... $pct%",
+                        color = Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { state.downloadProgress },
+                        color = Accent,
+                        trackColor = PanelSecondary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                }
+
+                if (!state.errorMessage.isNullOrBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        state.errorMessage,
+                        color = Color(0xFFFF7A7A),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                Button(
+                    onClick = onUpdateNow,
+                    enabled = !state.isDownloading,
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        if (state.isDownloading) "Downloading..." else "Update Now",
+                        color = Ink,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(
+                        onClick = onDownloadInBrowser,
+                        enabled = !state.isDownloading
+                    ) {
+                        Text("Browser", color = Accent, fontSize = 12.sp)
+                    }
+                    TextButton(
+                        onClick = onSkipVersion,
+                        enabled = !state.isDownloading
+                    ) {
+                        Text("Skip", color = SoftText, fontSize = 12.sp)
+                    }
+                    TextButton(
+                        onClick = onLater,
+                        enabled = !state.isDownloading
+                    ) {
+                        Text("Later", color = SoftText, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun AppUpdateSettingsDialog(
+    state: AppUpdateUiState,
+    onSaveRepo: (String) -> Unit,
+    onCheckNow: () -> Unit,
+    onOpenAvailableUpdate: () -> Unit,
+    onOpenPackagesPage: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var repoInput by remember(state.githubRepo) { mutableStateOf(state.githubRepo) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Panel,
+        title = {
+            Text(
+                "FM Music Updates",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Installed Version: v${state.currentVersionName} (Build ${state.currentVersionCode})",
+                    color = Accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "GitHub Repository (owner/repo):",
+                    color = SoftText,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = repoInput,
+                    onValueChange = { repoInput = it },
+                    placeholder = { Text("username/fm-music", color = Color(0xFF6B6B7A)) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Accent,
+                        focusedContainerColor = PanelSecondary,
+                        unfocusedContainerColor = PanelSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (!state.upToDateMessage.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(state.upToDateMessage, color = Accent, fontSize = 12.sp)
+                }
+                if (!state.errorMessage.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(state.errorMessage, color = Color(0xFFFF7A7A), fontSize = 12.sp)
+                }
+
+                if (state.availableUpdate != null) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenAvailableUpdate,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            "Install v${state.availableUpdate.versionName} Update",
+                            color = Accent,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (state.githubRepo.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(
+                        onClick = onOpenPackagesPage,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open GitHub Packages", color = SoftText, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSaveRepo(repoInput)
+                    onCheckNow()
+                },
+                enabled = !state.isChecking,
+                colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    if (state.isChecking) "Checking..." else "Check for Updates",
+                    color = Ink,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = SoftText)
+            }
+        }
+    )
+}
+

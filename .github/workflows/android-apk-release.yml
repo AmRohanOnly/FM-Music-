@@ -1,0 +1,214 @@
+name: Build & Publish Android APK to GitHub Packages & Releases
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'App version name (e.g. 1.0.1 or leave blank for auto)'
+        required: false
+        default: ''
+      release_notes:
+        description: 'Release notes shown in the in-app update prompt'
+        required: false
+        default: 'Performance improvements, streaming stability fixes, and player enhancements.'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-publish-apk:
+    name: Build APK, Publish to GitHub Packages & Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Android SDK (API 35)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+
+      - name: Resolve Version Code & Version Name
+        id: meta
+        shell: bash
+        run: |
+          VERSION_CODE="${{ github.run_number }}"
+          INPUT_VER="${{ github.event.inputs.version_name }}"
+          if [[ -n "$INPUT_VER" ]]; then
+            VERSION_NAME="${INPUT_VER#v}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION_NAME="${TAG#v}"
+          else
+            VERSION_NAME="1.0.${{ github.run_number }}"
+          fi
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Signing Keystore
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            echo "FM_SIGN_KEYSTORE=release.keystore" >> "$GITHUB_ENV"
+            echo "FM_SIGN_STORE_PASS=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "FM_SIGN_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "FM_SIGN_KEY_PASS=${{ secrets.ANDROID_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          elif [[ -f debug.keystore.base64 ]]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+      - name: Grant Gradle Wrapper Execute Permission (or bootstrap Gradle)
+        shell: bash
+        run: |
+          if [[ -f ./gradlew ]]; then
+            chmod +x ./gradlew
+            echo "GRADLE_CMD=./gradlew" >> "$GITHUB_ENV"
+          else
+            GRADLE_VER="8.13"
+            curl -sSL "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" -o /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            echo "GRADLE_CMD=/tmp/gradle-${GRADLE_VER}/bin/gradle" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run Android Unit Tests
+        run: |
+          $GRADLE_CMD :app:testDebugUnitTest \
+            -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
+            -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
+            -PFM_GITHUB_REPO=${{ github.repository }}
+
+      - name: Build Signed Release APK
+        run: |
+          $GRADLE_CMD :app:assembleRelease \
+            -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
+            -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
+            -PFM_GITHUB_REPO=${{ github.repository }}
+
+      - name: Package APK & Generate Update Manifest
+        id: package
+        shell: bash
+        run: |
+          mkdir -p dist-apk
+          APK_SOURCE=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [[ -z "$APK_SOURCE" ]]; then
+            echo "Error: No release APK generated" >&2
+            exit 1
+          fi
+
+          VERSION_NAME="${{ steps.meta.outputs.version_name }}"
+          VERSION_CODE="${{ steps.meta.outputs.version_code }}"
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          VERSIONED_APK="dist-apk/FM-Music-v${VERSION_NAME}.apk"
+          LATEST_APK="dist-apk/FM-Music-latest.apk"
+
+          cp "$APK_SOURCE" "$VERSIONED_APK"
+          cp "$APK_SOURCE" "$LATEST_APK"
+
+          SHA256=$(sha256sum "$VERSIONED_APK" | awk '{print $1}')
+          SIZE_BYTES=$(stat -c%s "$VERSIONED_APK")
+          APK_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/FM-Music-v${VERSION_NAME}.apk"
+          NOTES="${{ github.event.inputs.release_notes }}"
+          if [[ -z "$NOTES" ]]; then
+            NOTES="FM Music v${VERSION_NAME} (Build ${VERSION_CODE}) — includes latest streaming, equalizer, and UI improvements."
+          fi
+
+          jq -n \
+            --arg appName "FM Music" \
+            --arg packageId "com.fmmusic.client" \
+            --argjson versionCode "$VERSION_CODE" \
+            --arg versionName "$VERSION_NAME" \
+            --arg tagName "$TAG_NAME" \
+            --arg apkUrl "$APK_URL" \
+            --arg sha256 "$SHA256" \
+            --argjson sizeBytes "$SIZE_BYTES" \
+            --arg publishedAt "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            --arg releaseNotes "$NOTES" \
+            '{
+              appName: $appName,
+              packageId: $packageId,
+              versionCode: $versionCode,
+              versionName: $versionName,
+              tagName: $tagName,
+              apkUrl: $apkUrl,
+              sha256: $sha256,
+              sizeBytes: $sizeBytes,
+              publishedAt: $publishedAt,
+              releaseNotes: $releaseNotes
+            }' > dist-apk/update-manifest.json
+
+          echo "apk_path=${VERSIONED_APK}" >> "$GITHUB_OUTPUT"
+          cat dist-apk/update-manifest.json
+
+      - name: Publish APK to GitHub Packages (Maven Registry)
+        shell: bash
+        run: |
+          mkdir -p ~/.m2
+          cat << 'EOF' > ~/.m2/settings.xml
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${env.GITHUB_ACTOR}</username>
+                <password>${env.GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+
+          mvn -B deploy:deploy-file \
+            -DrepositoryId=github \
+            -Durl="https://maven.pkg.github.com/${{ github.repository }}" \
+            -DgroupId=com.fmmusic \
+            -DartifactId=fm-music-android \
+            -Dversion="${{ steps.meta.outputs.version_name }}" \
+            -Dpackaging=apk \
+            -Dfile="${{ steps.package.outputs.apk_path }}" \
+            -DgeneratePom=true
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish GitHub Release with APK & Update Manifest
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: "FM Music v${{ steps.meta.outputs.version_name }}"
+          make_latest: true
+          body: |
+            ### FM Music for Android v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }})
+
+            ${{ github.event.inputs.release_notes || 'Automatic build & release published from repository.' }}
+
+            **Downloads**
+            - **Android APK**: `FM-Music-v${{ steps.meta.outputs.version_name }}.apk` (attached below)
+            - **GitHub Packages**: `com.fmmusic:fm-music-android:${{ steps.meta.outputs.version_name }}:apk`
+            - **In-App Auto-Update**: Older versions of FM Music automatically detect this release and prompt users to update.
+          files: |
+            dist-apk/FM-Music-v${{ steps.meta.outputs.version_name }}.apk
+            dist-apk/FM-Music-latest.apk
+            dist-apk/update-manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-music-android-v${{ steps.meta.outputs.version_name }}
+          path: dist-apk/*

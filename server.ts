@@ -639,6 +639,172 @@ async function startServer() {
     }
   });
 
+  // 6. Serve local Android APK directly for testing & sideloading
+  app.get('/api/download-apk', (_req, res) => {
+    const candidates = [
+      path.join(__dirname, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      path.join(__dirname, '.build-outputs', 'app-debug.apk'),
+      path.join(__dirname, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+    ];
+    const apkPath = candidates.find((p) => fs.existsSync(p));
+    if (!apkPath) {
+      return res.status(404).json({
+        error: 'Built APK not found locally. Push to GitHub to build via GitHub Actions.',
+      });
+    }
+
+    const stat = fs.statSync(apkPath);
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="FM-Music-Android.apk"');
+    res.setHeader('Content-Length', String(stat.size));
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.sendFile(apkPath, { dotfiles: 'allow' });
+  });
+
+  // 7. GitHub Releases & Packages Auto-Update Check Endpoint
+  app.get('/api/app-update', async (req, res) => {
+    const rawRepo = String(req.query.repo || '').trim();
+    const currentVersion = String(req.query.currentVersion || '1.0.0').trim() || '1.0.0';
+
+    const cleanRepo = rawRepo
+      .replace(/^https?:\/\/github\.com\//i, '')
+      .replace(/^github\.com\//i, '')
+      .replace(/\.git$/i, '')
+      .replace(/^\/+|\/+$/g, '');
+
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cleanRepo)) {
+      return res.status(400).json({ error: 'Invalid GitHub repository format. Expected owner/repo.' });
+    }
+
+    const packagesUrl = `https://github.com/${cleanRepo}?tab=packages`;
+    const fallbackReleasePage = `https://github.com/${cleanRepo}/releases`;
+
+    const compareVersions = (remote: string, current: string): number => {
+      const parse = (v: string) =>
+        v
+          .trim()
+          .replace(/^v/i, '')
+          .split('-')[0]
+          .split('.')
+          .map((p) => {
+            const m = p.match(/^\d+/);
+            return m ? parseInt(m[0], 10) : 0;
+          });
+      const a = parse(remote);
+      const b = parse(current);
+      const len = Math.max(a.length, b.length, 3);
+      for (let i = 0; i < len; i++) {
+        const av = a[i] ?? 0;
+        const bv = b[i] ?? 0;
+        if (av > bv) return 1;
+        if (av < bv) return -1;
+      }
+      return 0;
+    };
+
+    try {
+      const ghRes = await fetch(`https://api.github.com/repos/${cleanRepo}/releases/latest`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'FM-Music-Updater/1.0',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      if (ghRes.status === 404) {
+        return res.json({
+          repo: cleanRepo,
+          currentVersion,
+          latestVersion: currentVersion,
+          tagName: '',
+          versionCode: null,
+          updateAvailable: false,
+          releaseTitle: '',
+          releaseNotes: '',
+          apkDownloadUrl: null,
+          releasePageUrl: fallbackReleasePage,
+          packagesUrl,
+          sizeBytes: 0,
+          publishedAt: '',
+        });
+      }
+
+      if (!ghRes.ok) {
+        return res.status(502).json({
+          error: `GitHub API returned status ${ghRes.status}`,
+        });
+      }
+
+      const release = await ghRes.json();
+      const assets: Array<{ name?: string; browser_download_url?: string; size?: number }> =
+        Array.isArray(release?.assets) ? release.assets : [];
+
+      const apkAsset =
+        assets.find((a) => typeof a.name === 'string' && a.name.toLowerCase().endsWith('-latest.apk')) ||
+        assets.find((a) => typeof a.name === 'string' && a.name.toLowerCase().endsWith('.apk')) ||
+        null;
+
+      const manifestAsset =
+        assets.find((a) => typeof a.name === 'string' && a.name.toLowerCase() === 'update-manifest.json') ||
+        null;
+
+      let manifestData: {
+        versionName?: string;
+        versionCode?: number;
+        releaseNotes?: string;
+        apkUrl?: string;
+        sizeBytes?: number;
+        publishedAt?: string;
+      } | null = null;
+
+      if (manifestAsset?.browser_download_url) {
+        try {
+          const mRes = await fetch(manifestAsset.browser_download_url, {
+            headers: { 'User-Agent': 'FM-Music-Updater/1.0' },
+            signal: AbortSignal.timeout(4000),
+          });
+          if (mRes.ok) {
+            manifestData = await mRes.json();
+          }
+        } catch {
+          // Optional manifest fallback
+        }
+      }
+
+      const tagName = String(release?.tag_name || '');
+      const latestVersion =
+        String(manifestData?.versionName || '').trim() || tagName.replace(/^v/i, '').trim() || currentVersion;
+      const versionCode = typeof manifestData?.versionCode === 'number' ? manifestData.versionCode : null;
+      const apkDownloadUrl = manifestData?.apkUrl || apkAsset?.browser_download_url || null;
+      const sizeBytes = Number(manifestData?.sizeBytes || apkAsset?.size || 0);
+      const releaseNotes = String(manifestData?.releaseNotes || release?.body || '').trim();
+      const publishedAt = String(manifestData?.publishedAt || release?.published_at || '');
+      const releasePageUrl = String(release?.html_url || fallbackReleasePage);
+      const releaseTitle = String(release?.name || tagName || `v${latestVersion}`);
+
+      const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
+
+      return res.json({
+        repo: cleanRepo,
+        currentVersion,
+        latestVersion,
+        tagName,
+        versionCode,
+        updateAvailable,
+        releaseTitle,
+        releaseNotes,
+        apkDownloadUrl,
+        releasePageUrl,
+        packagesUrl,
+        sizeBytes,
+        publishedAt,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to query GitHub Releases';
+      return res.status(502).json({ error: message });
+    }
+  });
+
   // Vite middleware in dev or static serving in production
   const isProd = process.env.NODE_ENV === 'production';
   const distPath = path.join(__dirname, 'dist');

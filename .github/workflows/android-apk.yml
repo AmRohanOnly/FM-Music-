@@ -45,17 +45,18 @@ jobs:
             curl --fail --location --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip -o "$RUNNER_TEMP/android-tools.zip"
             unzip -q "$RUNNER_TEMP/android-tools.zip" -d "$RUNNER_TEMP/android-tools"
             SDKMANAGER="$RUNNER_TEMP/android-tools/cmdline-tools/bin/sdkmanager"
-            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --list --channel=3
-            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" 'platforms;android-37' 'build-tools;37.0.0'
+            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --list --channel=3 | grep -E 'platforms;android-(3[6-9]|[A-Z])|build-tools;3[6-9]'
+            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --channel=3 'platforms;android-37' 'build-tools;37.0.0'
           ) 2>&1 | tee "$RUNNER_TEMP/android-sdk.log"
           sdk_status=${PIPESTATUS[0]}
           if [ "$sdk_status" -ne 0 ]; then
             python3 - <<'PY'
           import os
           from pathlib import Path
-          log = (Path(os.environ['RUNNER_TEMP']) / 'android-sdk.log').read_text()[-18000:]
-          escaped = log.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print(f'::error title=Android SDK installation failure::{escaped}')
+          log = (Path(os.environ['RUNNER_TEMP']) / 'android-sdk.log').read_text()[-9000:]
+          for i in range(0, len(log), 3000):
+              escaped = log[i:i+3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Android SDK installation failure {i // 3000 + 1}::{escaped}')
           PY
           fi
           exit "$sdk_status"
@@ -84,8 +85,9 @@ jobs:
           start = log.find('FAILURE:')
           details = log[max(0, start - 6000):] if start >= 0 else log[-12000:]
           details = details[:12000]
-          escaped = details.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print(f'::error title=Android build failure::{escaped}')
+          for i in range(0, len(details), 3000):
+              escaped = details[i:i+3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Android build failure {i // 3000 + 1}::{escaped}')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write('## Android build failure\n\n```text\n' + details + '\n```\n')
           PY

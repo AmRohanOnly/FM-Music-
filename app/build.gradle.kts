@@ -2,14 +2,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.fmmusic.client"
-    compileSdk = 36
-    buildToolsVersion = "36.0.0"
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.fmmusic.client"

@@ -31,19 +31,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - name: Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
-      - name: Install Android build tools
-        run: |
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+          java-version: '21'
+      - name: Install Android SDK and build tools
+        uses: android-actions/setup-android@v4.0.4
         with:
-          gradle-version: '8.13'
+          cmdline-tools-version: '15859902'
+          packages: 'platform-tools platforms;android-37 build-tools;37.0.0'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          gradle-version: '9.8.2'
       - name: Generate disposable debug signing key
         run: >-
           keytool -genkeypair -noprompt
@@ -63,7 +64,7 @@ jobs:
           from pathlib import Path
           log = (Path(os.environ['RUNNER_TEMP']) / 'android-build.log').read_text()
           start = log.find('FAILURE:')
-          details = log[start:] if start >= 0 else log[-12000:]
+          details = log[max(0, start - 6000):] if start >= 0 else log[-12000:]
           details = details[:12000]
           escaped = details.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
           print(f'::error title=Android build failure::{escaped}')

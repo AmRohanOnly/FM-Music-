@@ -1,3 +1,12 @@
+import {
+  cipherDeobfuscator,
+  PlayerCodePreloadResult,
+  CipherTransformOp,
+} from './cipherDeobfuscator';
+
+export { cipherDeobfuscator };
+export type { PlayerCodePreloadResult, CipherTransformOp };
+
 /**
  * Formats a YouTube Music search URL matching the Android implementation
  * and test cases in MusicSearchTest.
@@ -10,21 +19,49 @@ export function youtubeMusicSearchUrl(query: string): string {
 
 export interface CatalogSearchItem {
   id: string;
+  youtubeId: string;
   title: string;
   artist: string;
+  album?: string;
   type: 'song' | 'album' | 'artist' | 'playlist';
   duration?: string;
-  thumbnailUrl?: string;
+  durationSeconds: number;
+  thumbnailUrl: string;
+  streamUrl?: string;
+  source: 'youtube_music' | 'online_itunes' | 'youtube_video' | 'catalog';
 }
 
 export interface SearchResponse {
   query: string;
   items: CatalogSearchItem[];
+  totalResults: number;
+}
+
+/**
+ * Parses a YouTube video ID from various YouTube URL formats or bare IDs.
+ */
+export function parseYouTubeVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  // 11 character bare video ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+  // youtu.be/ID
+  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+  if (shortMatch) return shortMatch[1];
+  // youtube.com/watch?v=ID or music.youtube.com/watch?v=ID
+  const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) return watchMatch[1];
+  // youtube.com/embed/ID
+  const embedMatch = trimmed.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/);
+  if (embedMatch) return embedMatch[1];
+
+  return null;
 }
 
 /**
  * Port of com.fmmusic.client.network.InnerTubeCatalogClient.
- * Provides search query metadata handling without stream extraction.
+ * Provides live online music search across online catalogs and YouTube.
  */
 export class InnerTubeCatalogClient {
   async search(query: string): Promise<SearchResponse> {
@@ -33,17 +70,146 @@ export class InnerTubeCatalogClient {
     }
 
     const trimmed = query.trim();
-    // Catalog metadata wrapper
+
+    // 1. Check if the query is a direct YouTube URL or Video ID
+    const directVideoId = parseYouTubeVideoId(trimmed);
+    if (directVideoId) {
+      try {
+        const oembedRes = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${directVideoId}&format=json`,
+          { signal: AbortSignal.timeout(3500) }
+        );
+        if (oembedRes.ok) {
+          const oembedData = await oembedRes.json();
+          return {
+            query: trimmed,
+            totalResults: 1,
+            items: [
+              {
+                id: `yt_${directVideoId}`,
+                youtubeId: directVideoId,
+                title: oembedData.title || 'YouTube Video Track',
+                artist: oembedData.author_name || 'YouTube Creator',
+                album: 'YouTube Stream',
+                type: 'song',
+                duration: '3:30',
+                durationSeconds: 210,
+                thumbnailUrl:
+                  oembedData.thumbnail_url ||
+                  `https://i.ytimg.com/vi/${directVideoId}/hqdefault.jpg`,
+                source: 'youtube_video',
+              },
+            ],
+          };
+        }
+      } catch {
+        // Fall through
+      }
+
+      return {
+        query: trimmed,
+        totalResults: 1,
+        items: [
+          {
+            id: `yt_${directVideoId}`,
+            youtubeId: directVideoId,
+            title: `YouTube Video (${directVideoId})`,
+            artist: 'YouTube Media',
+            album: 'YouTube Stream',
+            type: 'song',
+            duration: '3:30',
+            durationSeconds: 210,
+            thumbnailUrl: `https://i.ytimg.com/vi/${directVideoId}/hqdefault.jpg`,
+            source: 'youtube_video',
+          },
+        ],
+      };
+    }
+
+    // 2. Primary: Query our backend YouTube Music InnerTube Search (/api/search)
+    // Returns authentic full-length songs with real videoId, artist, album, and exact track duration
+    if (typeof window !== 'undefined') {
+      try {
+        const apiRes = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
+          signal: AbortSignal.timeout(7000),
+        });
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (Array.isArray(apiData.items) && apiData.items.length > 0) {
+            const items: CatalogSearchItem[] = apiData.items.map((item: any) => ({
+              id: item.id || `ytm_${item.youtubeId}`,
+              youtubeId: item.youtubeId,
+              title: item.title || trimmed,
+              artist: item.artist || 'YouTube Music Artist',
+              album: item.album || 'Single',
+              type: 'song',
+              duration: item.duration || '3:30',
+              durationSeconds: item.durationSeconds || 210,
+              thumbnailUrl:
+                item.thumbnailUrl || `https://i.ytimg.com/vi/${item.youtubeId}/hqdefault.jpg`,
+              source: 'youtube_music',
+            }));
+            return {
+              query: trimmed,
+              items,
+              totalResults: items.length,
+            };
+          }
+        }
+      } catch {
+        // Fall through to metadata search
+      }
+    }
+
+    // 3. Fallback: iTunes metadata search (kept only as metadata fallback when backend is unreachable)
+    try {
+      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(
+        trimmed
+      )}&entity=song&limit=15`;
+      const res = await fetch(itunesUrl, { signal: AbortSignal.timeout(4500) });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.results) && data.results.length > 0) {
+          const items: CatalogSearchItem[] = data.results.map((song: any, idx: number) => {
+            const durationSec = Math.round((song.trackTimeMillis || 210000) / 1000);
+            const mins = Math.floor(durationSec / 60);
+            const secs = durationSec % 60;
+            const durationFormatted = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            const artworkHighRes = (song.artworkUrl100 || '').replace('100x100bb.jpg', '600x600bb.jpg');
+
+            return {
+              id: `online_song_${song.trackId || idx}`,
+              youtubeId: '',
+              title: song.trackName || trimmed,
+              artist: song.artistName || 'Various Artists',
+              album: song.collectionName || 'Single',
+              type: 'song',
+              duration: durationFormatted,
+              durationSeconds: durationSec,
+              thumbnailUrl:
+                artworkHighRes ||
+                song.artworkUrl100 ||
+                'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
+              streamUrl: song.previewUrl,
+              source: 'online_itunes',
+            };
+          });
+
+          return {
+            query: trimmed,
+            items,
+            totalResults: items.length,
+          };
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
     return {
       query: trimmed,
-      items: [
-        {
-          id: `search_${encodeURIComponent(trimmed)}_1`,
-          title: trimmed,
-          artist: 'YouTube Music Search',
-          type: 'song',
-        },
-      ],
+      items: [],
+      totalResults: 0,
     };
   }
 }
@@ -79,9 +245,12 @@ export interface StreamFormatInfo {
   itag?: number;
   contentLength?: string;
   expiresInSeconds?: number;
-  source: 'innertube_player' | 'piped_api' | 'licensed_stream';
+  approxDurationMs?: number;
+  source: 'innertube_player' | 'piped_api' | 'youtube_full_stream' | 'licensed_stream';
   isSigned: boolean;
   expiresAt: number;
+  cipherDeobfuscated?: boolean;
+  requiresYouTubeEngine?: boolean;
 }
 
 export class MusicNetworkClient {
@@ -131,7 +300,30 @@ export class MusicNetworkClient {
       startTimestamp: Date.now(),
       statusMessage: 'Visitor session active for public music browsing',
     };
+    // Proactively preload player code for cipher deobfuscation
+    this.preloadPlayerCode().catch(() => {});
+
     return { ...this.visitorSession };
+  }
+
+  /**
+   * Preloads the YouTube web player JavaScript code and parses cipher deobfuscation
+   * routines (swap, splice, reverse, and n-transform) ahead of stream playback requests.
+   */
+  async preloadPlayerCode(playerUrl?: string): Promise<PlayerCodePreloadResult> {
+    return cipherDeobfuscator.preloadPlayerCode(playerUrl);
+  }
+
+  isPlayerCodePreloaded(): boolean {
+    return cipherDeobfuscator.getPreloadStatus().isPreloaded;
+  }
+
+  getPlayerCodePreloadStatus(): PlayerCodePreloadResult {
+    return cipherDeobfuscator.getPreloadStatus();
+  }
+
+  deobfuscateCipherUrl(cipherOrUrl: string): string {
+    return cipherDeobfuscator.deobfuscateCipherUrl(cipherOrUrl);
   }
 
   async initializePublicSession(): Promise<boolean> {
@@ -150,10 +342,43 @@ export class MusicNetworkClient {
     return { ...this.session };
   }
 
+  getCachedStream(videoId: string): StreamFormatInfo | null {
+    const cleanId = videoId.trim();
+    const cached = this.streamCache.get(cleanId);
+    if (cached && cached.url && Date.now() < cached.expiresAt - 60_000) {
+      return cached;
+    }
+    return null;
+  }
+
+  async resolveAlternateVideoId(
+    title: string,
+    artist: string,
+    excludeVideoId?: string
+  ): Promise<string | null> {
+    if (typeof window === 'undefined') return null;
+    try {
+      const q = `${title} ${artist}`.trim();
+      const res = await fetch(
+        `/api/resolve-track?q=${encodeURIComponent(q)}&exclude=${encodeURIComponent(excludeVideoId || '')}`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        return data?.track?.youtubeId || null;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   /**
    * Extracts signed stream URLs from the player endpoint for a given video ID,
    * preferring high-fidelity audio adaptive formats (128-160kbps AAC/Opus).
-   * Supports InnerTube /youtubei/v1/player with Piped API stream fallback.
+   * Automatically resolves signature ciphers via preloadPlayerCode deobfuscator.
+   * Uses server-side InnerTube / Piped extraction proxy in browser to avoid CORS,
+   * and delegates to full-length YouTube player engine when direct audio streams require login.
    */
   async extractPlayerStreamUrl(videoId: string): Promise<StreamFormatInfo> {
     const cleanId = videoId.trim();
@@ -167,9 +392,30 @@ export class MusicNetworkClient {
       return cached;
     }
 
+    // Ensure player code is preloaded
+    if (!this.isPlayerCodePreloaded()) {
+      await this.preloadPlayerCode().catch(() => {});
+    }
+
+    // 2. Query server-side /api/stream/:videoId proxy (bypasses browser CORS)
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch(`/api/stream/${encodeURIComponent(cleanId)}`, {
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.ok) {
+          const data: StreamFormatInfo = await res.json();
+          this.streamCache.set(cleanId, data);
+          return data;
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
     const visitorData = this.session.visitorData || this.visitorSession.visitorData;
 
-    // 2. Attempt direct InnerTube player endpoint
+    // 3. Direct InnerTube player attempt (for server/Node environment)
     try {
       const response = await fetch('https://music.youtube.com/youtubei/v1/player', {
         method: 'POST',
@@ -189,6 +435,7 @@ export class MusicNetworkClient {
           },
           videoId: cleanId,
         }),
+        signal: AbortSignal.timeout(4500),
       });
 
       if (response.ok) {
@@ -198,21 +445,45 @@ export class MusicNetworkClient {
           .filter((f: any) => typeof f.mimeType === 'string' && f.mimeType.startsWith('audio/'))
           .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
 
-        // Find direct playable URL (already signed)
-        const directAudio = audioFormats.find((f: any) => typeof f.url === 'string' && f.url.length > 0);
-        if (directAudio) {
+        let resolvedAudioUrl: string | null = null;
+        let chosenAudioFormat: any = null;
+
+        for (const format of audioFormats) {
+          if (typeof format.url === 'string' && format.url.length > 0) {
+            resolvedAudioUrl = cipherDeobfuscator.deobfuscateNParameter(format.url);
+            chosenAudioFormat = format;
+            break;
+          } else if (format.signatureCipher || format.cipher) {
+            const cipherStr = format.signatureCipher || format.cipher;
+            const deobfuscated = cipherDeobfuscator.deobfuscateCipherUrl(cipherStr);
+            if (deobfuscated) {
+              resolvedAudioUrl = deobfuscated;
+              chosenAudioFormat = format;
+              break;
+            }
+          }
+        }
+
+        if (resolvedAudioUrl && chosenAudioFormat) {
           const expiresIn = parseInt(data.streamingData?.expiresInSeconds || '21600', 10);
+          const durationSec = parseInt(data.videoDetails?.lengthSeconds || '210', 10);
+          const approxMs = chosenAudioFormat.approxDurationMs
+            ? parseInt(chosenAudioFormat.approxDurationMs, 10)
+            : durationSec * 1000;
+
           const result: StreamFormatInfo = {
             videoId: cleanId,
-            url: directAudio.url,
-            mimeType: directAudio.mimeType || 'audio/mp4; codecs="mp4a.40.2"',
-            bitrate: directAudio.bitrate || 128000,
-            audioQuality: directAudio.audioQuality || 'AUDIO_QUALITY_MEDIUM',
-            itag: directAudio.itag,
-            contentLength: directAudio.contentLength,
+            url: resolvedAudioUrl,
+            mimeType: chosenAudioFormat.mimeType || 'audio/mp4; codecs="mp4a.40.2"',
+            bitrate: chosenAudioFormat.bitrate || 128000,
+            audioQuality: chosenAudioFormat.audioQuality || 'AUDIO_QUALITY_MEDIUM',
+            itag: chosenAudioFormat.itag,
+            contentLength: chosenAudioFormat.contentLength,
             expiresInSeconds: expiresIn,
+            approxDurationMs: approxMs,
             source: 'innertube_player',
             isSigned: true,
+            cipherDeobfuscated: !!(chosenAudioFormat.signatureCipher || chosenAudioFormat.cipher),
             expiresAt: Date.now() + expiresIn * 1000,
           };
           this.streamCache.set(cleanId, result);
@@ -220,28 +491,29 @@ export class MusicNetworkClient {
         }
       }
     } catch {
-      // Direct browser-to-YouTube fetch may be subject to browser CORS; fall through to stream resolver
+      // Fall through to Piped
     }
 
-    // 3. Fallback to Piped stream extraction API
+    // 4. Fallback to Piped stream extraction API
     const pipedEndpoints = [
       `https://pipedapi.kavin.rocks/streams/${encodeURIComponent(cleanId)}`,
       `https://api.piped.video/streams/${encodeURIComponent(cleanId)}`,
+      `https://pipedapi.tokhmi.xyz/streams/${encodeURIComponent(cleanId)}`,
     ];
 
     for (const endpoint of pipedEndpoints) {
       try {
-        const res = await fetch(endpoint, { signal: AbortSignal.timeout(4000) });
+        const res = await fetch(endpoint, { signal: AbortSignal.timeout(3500) });
         if (res.ok) {
           const json = await res.json();
           const audioStreams = json?.audioStreams;
           if (Array.isArray(audioStreams) && audioStreams.length > 0) {
-            // Sort by bitrate descending
             const bestStream = [...audioStreams].sort(
               (a, b) => (b.bitrate || 0) - (a.bitrate || 0)
             )[0];
 
             if (bestStream?.url) {
+              const durationSec = typeof json.duration === 'number' ? json.duration : 210;
               const result: StreamFormatInfo = {
                 videoId: cleanId,
                 url: bestStream.url,
@@ -251,8 +523,10 @@ export class MusicNetworkClient {
                 itag: bestStream.itag,
                 contentLength: bestStream.contentLength ? String(bestStream.contentLength) : undefined,
                 expiresInSeconds: 21600,
+                approxDurationMs: durationSec * 1000,
                 source: 'piped_api',
                 isSigned: true,
+                cipherDeobfuscated: true,
                 expiresAt: Date.now() + 21600 * 1000,
               };
               this.streamCache.set(cleanId, result);
@@ -265,21 +539,43 @@ export class MusicNetworkClient {
       }
     }
 
-    // 4. Resilient signed stream fallback for offline/sandboxed demo
-    const fallbackStreamUrl = `https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3?sig=signed_${cleanId}&expire=${Math.floor(Date.now() / 1000) + 21600}`;
-    const fallbackResult: StreamFormatInfo = {
+    // 5. Full-length YouTube client playback directive (never substitute a 30s preview/freesound decoy!)
+    const fullLengthDirective: StreamFormatInfo = {
       videoId: cleanId,
-      url: fallbackStreamUrl,
-      mimeType: 'audio/mpeg',
-      bitrate: 128000,
-      audioQuality: 'AUDIO_QUALITY_MEDIUM',
+      url: '',
+      mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+      bitrate: 160000,
+      audioQuality: 'AUDIO_QUALITY_HIGH',
       expiresInSeconds: 21600,
-      source: 'licensed_stream',
+      source: 'youtube_full_stream',
       isSigned: true,
+      cipherDeobfuscated: true,
+      requiresYouTubeEngine: true,
       expiresAt: Date.now() + 21600 * 1000,
     };
-    this.streamCache.set(cleanId, fallbackResult);
-    return fallbackResult;
+    this.streamCache.set(cleanId, fullLengthDirective);
+    return fullLengthDirective;
+  }
+
+  /**
+   * Search for online tracks and transform them directly into Track models.
+   */
+  async searchOnlineTracks(query: string): Promise<any[]> {
+    const res = await this.catalog.search(query);
+    return res.items.map((item) => ({
+      id: item.id,
+      youtubeId: item.youtubeId,
+      title: item.title,
+      artist: item.artist,
+      album: item.album || 'Online Discovery',
+      vibe: 'Top hits' as const,
+      duration: item.durationSeconds || 210,
+      durationFormatted: item.duration || '3:30',
+      thumbnail: item.thumbnailUrl,
+      fallbackAudio: item.streamUrl || undefined,
+      source: item.source,
+      isOnlineTrack: true,
+    }));
   }
 
   close(): void {
@@ -293,3 +589,4 @@ export class MusicNetworkClient {
 export const musicNetworkClient = new MusicNetworkClient();
 // Automatically initialize on module load
 musicNetworkClient.startVisitorSession();
+

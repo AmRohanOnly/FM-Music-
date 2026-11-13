@@ -32,8 +32,10 @@ type PlayerStateListener = (state: InAppPlayerState) => void;
 class InAppPlayerManager {
   private ytPlayer: any = null;
   private ytReady = false;
+  private pendingYouTubeTrack: { track: Track; startSeconds: number } | null = null;
+  private failedVideoIds = new Set<string>();
   private audioFallback: HTMLAudioElement | null = null;
-  private currentMode: 'youtube' | 'audio' = 'audio';
+  private currentMode: 'youtube' | 'audio' = 'youtube';
   private containerId = 'fm-yt-hidden-player';
   private listeners = new Set<PlayerStateListener>();
   private progressInterval: any = null;
@@ -50,7 +52,7 @@ class InAppPlayerManager {
     volume: 80,
     isMuted: false,
     repeatMode: 'off',
-    streamEngine: 'local_audio',
+    streamEngine: 'youtube_iframe',
     streamSource: undefined,
     streamBitrate: undefined,
     streamMimeType: undefined,
@@ -74,26 +76,42 @@ class InAppPlayerManager {
       this.publish();
     });
     this.audioFallback.addEventListener('pause', () => {
-      this.state.isPlaying = false;
-      this.publish();
+      if (this.currentMode === 'audio') {
+        this.state.isPlaying = false;
+        this.publish();
+      }
     });
     this.audioFallback.addEventListener('ended', () => {
-      this.handleTrackEnded();
+      if (this.currentMode === 'audio') {
+        this.handleTrackEnded();
+      }
     });
     this.audioFallback.addEventListener('timeupdate', () => {
       if (this.currentMode === 'audio' && this.audioFallback) {
         this.state.currentTime = this.audioFallback.currentTime;
-        this.state.duration = this.audioFallback.duration || this.state.currentTrack?.duration || 0;
+        const knownDuration = this.state.currentTrack?.duration || 0;
+        const mediaDuration = this.audioFallback.duration;
+        if (typeof mediaDuration === 'number' && !isNaN(mediaDuration) && mediaDuration > 45) {
+          this.state.duration = mediaDuration;
+        } else if (knownDuration > 0) {
+          this.state.duration = knownDuration;
+        } else if (typeof mediaDuration === 'number' && !isNaN(mediaDuration) && mediaDuration > 0) {
+          this.state.duration = mediaDuration;
+        }
         this.publish();
       }
     });
     this.audioFallback.addEventListener('waiting', () => {
-      this.state.isBuffering = true;
-      this.publish();
+      if (this.currentMode === 'audio') {
+        this.state.isBuffering = true;
+        this.publish();
+      }
     });
     this.audioFallback.addEventListener('playing', () => {
-      this.state.isBuffering = false;
-      this.publish();
+      if (this.currentMode === 'audio') {
+        this.state.isBuffering = false;
+        this.publish();
+      }
     });
   }
 
@@ -124,12 +142,13 @@ class InAppPlayerManager {
       container = document.createElement('div');
       container.id = this.containerId;
       container.style.position = 'fixed';
-      container.style.bottom = '-9999px';
-      container.style.left = '-9999px';
+      container.style.bottom = '80px';
+      container.style.right = '0px';
       container.style.width = '200px';
       container.style.height = '200px';
-      container.style.opacity = '0';
+      container.style.opacity = '0.001';
       container.style.pointerEvents = 'none';
+      container.style.zIndex = '0';
       document.body.appendChild(container);
     }
 
@@ -144,19 +163,34 @@ class InAppPlayerManager {
           disablekb: 1,
           fs: 0,
           rel: 0,
+          playsinline: 1,
+          enablejsapi: 1,
           origin: window.location.origin,
         },
         events: {
           onReady: () => {
             this.ytReady = true;
             this.ytPlayer.setVolume(this.state.volume);
+            if (this.state.isMuted) {
+              this.ytPlayer.mute?.();
+            }
+            if (this.pendingYouTubeTrack) {
+              const pending = this.pendingYouTubeTrack;
+              this.pendingYouTubeTrack = null;
+              this.playViaYouTubeIframe(pending.track, pending.startSeconds);
+            }
           },
           onStateChange: (event: any) => {
+            if (this.currentMode !== 'youtube') return;
             // YT.PlayerState: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
             const state = event.data;
             if (state === 1) {
               this.state.isPlaying = true;
               this.state.isBuffering = false;
+              const dur = this.ytPlayer.getDuration?.();
+              if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+                this.state.duration = dur;
+              }
               this.publish();
             } else if (state === 2) {
               this.state.isPlaying = false;
@@ -169,11 +203,27 @@ class InAppPlayerManager {
               this.handleTrackEnded();
             }
           },
-          onError: () => {
-            // Fallback to audio if YouTube embedding fails
-            if (this.state.currentTrack?.fallbackAudio && this.audioFallback) {
+          onError: async () => {
+            const track = this.state.currentTrack;
+            if (track?.youtubeId && !this.failedVideoIds.has(track.youtubeId)) {
+              this.failedVideoIds.add(track.youtubeId);
+              const altId = await musicNetworkClient.resolveAlternateVideoId(
+                track.title,
+                track.artist,
+                track.youtubeId
+              );
+              if (altId && !this.failedVideoIds.has(altId) && this.state.currentTrack?.id === track.id) {
+                const updatedTrack = { ...track, youtubeId: altId };
+                this.state.currentTrack = updatedTrack;
+                this.playViaYouTubeIframe(updatedTrack, this.state.currentTime);
+                return;
+              }
+            }
+
+            // Fallback to audio only if alternate YouTube Music resolution fails
+            if (track?.fallbackAudio && this.audioFallback) {
               this.currentMode = 'audio';
-              this.audioFallback.src = this.state.currentTrack.fallbackAudio;
+              this.audioFallback.src = track.fallbackAudio;
               this.audioFallback.play().catch(() => {});
             } else {
               this.state.isBuffering = false;
@@ -190,7 +240,12 @@ class InAppPlayerManager {
 
   private startProgressTracker() {
     this.progressInterval = setInterval(() => {
-      if (this.state.isPlaying && this.currentMode === 'youtube' && this.ytPlayer && this.ytReady) {
+      if (
+        this.currentMode === 'youtube' &&
+        this.ytPlayer &&
+        this.ytReady &&
+        (this.state.isPlaying || this.state.isBuffering)
+      ) {
         try {
           const cur = this.ytPlayer.getCurrentTime?.();
           const dur = this.ytPlayer.getDuration?.();
@@ -207,7 +262,7 @@ class InAppPlayerManager {
           // ignore
         }
       }
-    }, 500);
+    }, 350);
   }
 
   public subscribe(listener: PlayerStateListener): () => void {
@@ -244,73 +299,117 @@ class InAppPlayerManager {
     this.state.isBuffering = true;
     this.publish();
 
-    // Prefer feeding signed stream URL directly into local media player engine
-    if (this.state.streamEngine === 'local_audio') {
-      const currentRequestId = ++this.activeExtractionRequestId;
-      this.currentMode = 'audio';
+    const currentRequestId = ++this.activeExtractionRequestId;
+    const videoId = track.youtubeId;
 
-      if (this.ytPlayer && this.ytReady) {
-        try {
-          this.ytPlayer.pauseVideo?.();
-        } catch {}
+    // 1. If the user selected local_audio AND a genuine direct full-length audio stream is already cached, play it right away
+    if (videoId && this.state.streamEngine === 'local_audio') {
+      const cached = musicNetworkClient.getCachedStream(videoId);
+      if (cached && cached.url && !cached.requiresYouTubeEngine && this.audioFallback) {
+        this.playDirectAudioStream(track, cached);
+        return;
       }
+    }
 
-      const videoId = track.youtubeId || track.id;
+    // 2. If track has a youtubeId, start full-length YouTube streaming synchronously on click
+    // so mobile/desktop browser autoplay policy is always satisfied and full songs never cut off at 30s!
+    if (videoId) {
+      this.playViaYouTubeIframe(track, 0);
+
+      // Query player endpoint in background for stream telemetry & direct audio extraction
       musicNetworkClient
         .extractPlayerStreamUrl(videoId)
         .then((streamInfo: StreamFormatInfo) => {
           if (this.activeExtractionRequestId !== currentRequestId) return;
-          if (this.audioFallback) {
-            this.audioFallback.src = streamInfo.url;
-            this.audioFallback.volume = this.state.isMuted ? 0 : this.state.volume / 100;
-            this.audioFallback.currentTime = 0;
-            this.state.streamSource =
-              streamInfo.source === 'innertube_player'
-                ? 'InnerTube Player Endpoint'
-                : streamInfo.source === 'piped_api'
-                ? 'Piped Stream Extractor'
-                : 'Licensed Audio Stream';
-            this.state.streamBitrate = streamInfo.bitrate;
-            this.state.streamMimeType = streamInfo.mimeType;
-            this.state.isSignedStream = streamInfo.isSigned;
-            this.state.extractedStreamUrl = streamInfo.url;
-            this.publish();
 
-            this.audioFallback
-              .play()
-              .then(() => {
-                this.state.isPlaying = true;
-                this.state.isBuffering = false;
-                this.publish();
-              })
-              .catch(() => {
-                // In case of local audio decode error, fall back to catalog audio or YouTube iframe
-                if (track.fallbackAudio) {
-                  this.audioFallback!.src = track.fallbackAudio;
-                  this.audioFallback!.play().catch(() => {});
-                } else if (track.youtubeId) {
-                  this.playViaYouTubeIframe(track);
-                }
-              });
+          if (streamInfo.approxDurationMs && streamInfo.approxDurationMs > 30000) {
+            const streamSec = Math.round(streamInfo.approxDurationMs / 1000);
+            if (streamSec > this.state.duration) {
+              this.state.duration = streamSec;
+            }
+          }
+
+          this.state.streamBitrate = streamInfo.bitrate;
+          this.state.streamMimeType = streamInfo.mimeType;
+          this.state.isSignedStream = streamInfo.isSigned;
+          this.state.extractedStreamUrl = streamInfo.url || `youtube://watch?v=${videoId}`;
+
+          if (
+            this.state.streamEngine === 'local_audio' &&
+            streamInfo.url &&
+            !streamInfo.requiresYouTubeEngine &&
+            (streamInfo.source === 'innertube_player' || streamInfo.source === 'piped_api')
+          ) {
+            this.playDirectAudioStream(track, streamInfo, this.state.currentTime);
+          } else {
+            this.state.streamSource = 'YouTube Full-Length Stream';
+            this.publish();
           }
         })
         .catch(() => {
-          if (this.activeExtractionRequestId !== currentRequestId) return;
-          if (track.fallbackAudio && this.audioFallback) {
-            this.audioFallback.src = track.fallbackAudio;
-            this.audioFallback.play().catch(() => {});
-          } else if (track.youtubeId) {
-            this.playViaYouTubeIframe(track);
-          }
+          // Full-length YouTube player continues uninterrupted
         });
       return;
     }
 
-    // Otherwise use YouTube IFrame player engine
-    this.playViaYouTubeIframe(track);
+    // 3. Track arrived without a youtubeId (e.g. offline metadata fallback): resolve full YouTube Music track
+    musicNetworkClient
+      .resolveAlternateVideoId(track.title, track.artist)
+      .then((resolvedId) => {
+        if (this.activeExtractionRequestId !== currentRequestId) return;
+        if (resolvedId) {
+          const updatedTrack = { ...track, youtubeId: resolvedId };
+          this.state.currentTrack = updatedTrack;
+          this.playViaYouTubeIframe(updatedTrack, 0);
+        } else if (track.fallbackAudio && this.audioFallback) {
+          this.currentMode = 'audio';
+          this.audioFallback.src = track.fallbackAudio;
+          this.audioFallback.play().catch(() => {});
+        }
+      });
   }
 
-  private playViaYouTubeIframe(track: Track) {
+  private playDirectAudioStream(track: Track, streamInfo: StreamFormatInfo, startAtSeconds: number = 0) {
+    if (!this.audioFallback || !streamInfo.url) return;
+
+    this.currentMode = 'audio';
+    if (this.ytPlayer && this.ytReady) {
+      try {
+        this.ytPlayer.pauseVideo?.();
+      } catch {}
+    }
+
+    this.audioFallback.src = streamInfo.url;
+    this.audioFallback.volume = this.state.isMuted ? 0 : this.state.volume / 100;
+    try {
+      this.audioFallback.currentTime = startAtSeconds;
+    } catch {}
+
+    this.state.streamEngine = 'local_audio';
+    this.state.streamSource =
+      streamInfo.source === 'innertube_player'
+        ? 'InnerTube Player Endpoint (Signed Audio)'
+        : 'Piped Direct Audio Stream';
+    this.state.streamBitrate = streamInfo.bitrate;
+    this.state.streamMimeType = streamInfo.mimeType;
+    this.state.isSignedStream = streamInfo.isSigned;
+    this.state.extractedStreamUrl = streamInfo.url;
+
+    this.audioFallback
+      .play()
+      .then(() => {
+        this.state.isPlaying = true;
+        this.state.isBuffering = false;
+        this.publish();
+      })
+      .catch(() => {
+        if (track.youtubeId) {
+          this.playViaYouTubeIframe(track, startAtSeconds);
+        }
+      });
+  }
+
+  private playViaYouTubeIframe(track: Track, startSeconds: number = 0) {
     if (!track.youtubeId) {
       if (track.fallbackAudio && this.audioFallback) {
         this.currentMode = 'audio';
@@ -325,25 +424,32 @@ class InAppPlayerManager {
       this.audioFallback.pause();
     }
 
+    this.state.streamEngine = 'youtube_iframe';
+    this.state.streamSource = 'YouTube Full-Length Stream';
+    this.state.isSignedStream = true;
+
     if (this.ytReady && this.ytPlayer && this.ytPlayer.loadVideoById) {
+      this.pendingYouTubeTrack = null;
       try {
         this.ytPlayer.loadVideoById({
           videoId: track.youtubeId,
-          startSeconds: 0,
+          startSeconds: Math.floor(startSeconds),
         });
         this.ytPlayer.playVideo();
-        this.state.streamEngine = 'youtube_iframe';
-        this.state.streamSource = 'YouTube IFrame Engine';
-        this.state.isSignedStream = true;
+        this.state.isPlaying = true;
         this.publish();
       } catch {
-        // Fall back to local audio if iframe fails
         if (track.fallbackAudio && this.audioFallback) {
           this.currentMode = 'audio';
           this.audioFallback.src = track.fallbackAudio;
           this.audioFallback.play().catch(() => {});
         }
       }
+    } else {
+      // Queue track until YouTube IFrame API finishes initializing
+      this.pendingYouTubeTrack = { track, startSeconds };
+      this.state.isBuffering = true;
+      this.publish();
     }
   }
 
@@ -383,16 +489,21 @@ class InAppPlayerManager {
   public resume() {
     if (!this.state.currentTrack) return;
 
-    if (this.currentMode === 'youtube' && this.ytPlayer && this.ytReady) {
-      try {
-        this.ytPlayer.playVideo?.();
-        this.state.isPlaying = true;
-        this.publish();
+    if (this.currentMode === 'youtube') {
+      if (this.ytPlayer && this.ytReady) {
+        try {
+          this.ytPlayer.playVideo?.();
+          this.state.isPlaying = true;
+          this.publish();
+          return;
+        } catch {}
+      } else {
+        this.playViaYouTubeIframe(this.state.currentTrack, this.state.currentTime);
         return;
-      } catch {}
+      }
     }
 
-    if (this.audioFallback) {
+    if (this.audioFallback && this.audioFallback.src) {
       this.audioFallback.play().catch(() => {});
       this.state.isPlaying = true;
       this.publish();
@@ -406,7 +517,14 @@ class InAppPlayerManager {
         this.ytPlayer.seekTo?.(seconds, true);
       } catch {}
     } else if (this.audioFallback) {
-      this.audioFallback.currentTime = seconds;
+      const mediaDuration = this.audioFallback.duration || 0;
+      if (this.state.currentTrack?.youtubeId && (seconds > (mediaDuration - 2) || mediaDuration <= 45)) {
+        this.playViaYouTubeIframe(this.state.currentTrack, seconds);
+      } else {
+        try {
+          this.audioFallback.currentTime = seconds;
+        } catch {}
+      }
     }
     this.publish();
   }
@@ -437,10 +555,12 @@ class InAppPlayerManager {
 
     if (this.ytPlayer && this.ytReady) {
       try {
+        if (clamped > 0) this.ytPlayer.unMute?.();
         this.ytPlayer.setVolume?.(clamped);
       } catch {}
     }
     if (this.audioFallback) {
+      this.audioFallback.muted = clamped === 0;
       this.audioFallback.volume = clamped / 100;
     }
     this.publish();
@@ -448,6 +568,14 @@ class InAppPlayerManager {
 
   public toggleMute() {
     if (this.state.isMuted) {
+      if (this.ytPlayer && this.ytReady) {
+        try {
+          this.ytPlayer.unMute?.();
+        } catch {}
+      }
+      if (this.audioFallback) {
+        this.audioFallback.muted = false;
+      }
       this.setVolume(this.state.volume || 80);
       this.state.isMuted = false;
     } else {
@@ -465,6 +593,19 @@ class InAppPlayerManager {
   }
 
   private handleTrackEnded() {
+    const fullDuration = this.state.currentTrack?.duration || this.state.duration || 0;
+    // If the audio preview stream ended prematurely while full track is a complete song (> 40s),
+    // seamlessly transition to full-length YouTube streaming without skipping the song!
+    if (
+      this.currentMode === 'audio' &&
+      this.state.currentTrack?.youtubeId &&
+      fullDuration > 40 &&
+      this.state.currentTime < (fullDuration - 10)
+    ) {
+      this.playViaYouTubeIframe(this.state.currentTrack, Math.floor(this.state.currentTime));
+      return;
+    }
+
     if (this.state.repeatMode === 'one' && this.state.currentTrack) {
       this.seekTo(0);
       this.resume();

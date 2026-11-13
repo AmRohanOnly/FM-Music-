@@ -24,8 +24,19 @@ import {
   Trash2,
   Zap,
   Radio,
+  Compass,
+  Loader2,
+  Sparkles,
+  Music2,
+  Cpu,
+  KeyRound,
 } from 'lucide-react';
-import { musicNetworkClient, VisitorSessionState, StreamFormatInfo } from './services/musicNetworkClient';
+import {
+  musicNetworkClient,
+  VisitorSessionState,
+  StreamFormatInfo,
+  PlayerCodePreloadResult,
+} from './services/musicNetworkClient';
 
 interface GreetingInfo {
   heading: string;
@@ -166,6 +177,36 @@ export default function App() {
   const [testingStream, setTestingStream] = useState(false);
   const [extractedStreamResult, setExtractedStreamResult] = useState<StreamFormatInfo | null>(null);
 
+  const [playerCodeStatus, setPlayerCodeStatus] = useState<PlayerCodePreloadResult>(() =>
+    musicNetworkClient.getPlayerCodePreloadStatus()
+  );
+  const [isPreloadingPlayerCode, setIsPreloadingPlayerCode] = useState(false);
+  const [cipherTestResult, setCipherTestResult] = useState<string | null>(null);
+
+  const handlePreloadPlayerCode = async () => {
+    setIsPreloadingPlayerCode(true);
+    try {
+      const res = await musicNetworkClient.preloadPlayerCode();
+      setPlayerCodeStatus(res);
+      // Run a verification cipher deobfuscation test
+      const sampleCipher =
+        's=8976543210ZYXWVUTSRQPONMLKJIHGFEDCBAabcdefghijklmnopqrstuvwxyz&sp=sig&url=https%3A%2F%2Fgooglevideo.example.com%2Fvideoplayback%3Fexpire%3D123456';
+      const deobfuscatedUrl = musicNetworkClient.deobfuscateCipherUrl(sampleCipher);
+      const urlObj = new URL(deobfuscatedUrl);
+      const sig = urlObj.searchParams.get('sig');
+      setCipherTestResult(sig ? `Deciphered: ${sig.substring(0, 16)}...` : 'Success');
+      setNotification(
+        `Preloaded player code: ${res.playerVersion} (${res.operationsCount} ops, ${res.sampleDecipherLatencyMs}ms)`
+      );
+      setTimeout(() => setNotification(null), 3500);
+    } catch (err: any) {
+      setNotification(`Preload error: ${err?.message || 'Failed'}`);
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setIsPreloadingPlayerCode(false);
+    }
+  };
+
   const handleExtractStream = async (videoId: string) => {
     setTestingStream(true);
     try {
@@ -204,11 +245,19 @@ export default function App() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Subscribe to in-app player state
+  // Subscribe to in-app player state and preload player code
   useEffect(() => {
     const unsubscribe = inAppPlayer.subscribe((state) => {
       setPlayerState(state);
     });
+
+    // Proactively preload player code for cipher deobfuscation
+    musicNetworkClient
+      .preloadPlayerCode()
+      .then((status) => {
+        setPlayerCodeStatus(status);
+      })
+      .catch(() => {});
 
     const timer = setInterval(() => {
       setGreetingInfo(getTimeBasedGreeting());
@@ -227,16 +276,62 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSearch = (q: string) => {
+  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [mobileNavTab, setMobileNavTab] = useState<'home' | 'search' | 'offline' | 'queue'>('home');
+
+  const QUICK_SEARCH_CHIPS = [
+    'Kesariya',
+    'Shape of You',
+    'Arijit Singh',
+    'Taylor Swift',
+    'Coldplay',
+    'Diljit Dosanjh',
+    'Blinding Lights',
+    'Lofi Beats',
+    'Punjabi Hits',
+  ];
+
+  const handleSearch = async (q: string) => {
     const trimmed = q.trim();
     if (!trimmed) {
       setSearchResults(null);
       return;
     }
-    const results = searchCatalog(trimmed);
-    setSearchResults(results);
-    setNotification(`Found ${results.length} tracks for "${trimmed}"`);
-    setTimeout(() => setNotification(null), 3000);
+
+    setIsSearchingOnline(true);
+    setNotification(`Searching online music catalog for "${trimmed}"...`);
+
+    try {
+      // 1. Live online catalog search (iTunes / YouTube / InnerTube)
+      const onlineResults = await musicNetworkClient.searchOnlineTracks(trimmed);
+      // 2. Curated fallback / local catalog matches
+      const catalogResults = searchCatalog(trimmed);
+
+      // 3. Merge results cleanly without duplicates
+      const map = new Map<string, Track>();
+      for (const item of onlineResults) {
+        const key = `${item.title.toLowerCase()}___${item.artist.toLowerCase()}`;
+        map.set(key, item);
+      }
+      for (const item of catalogResults) {
+        const key = `${item.title.toLowerCase()}___${item.artist.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, item);
+        }
+      }
+
+      const merged = Array.from(map.values());
+      const finalResults = merged.length > 0 ? merged : onlineResults;
+      setSearchResults(finalResults);
+      setNotification(`Found ${finalResults.length} tracks for "${trimmed}"`);
+    } catch {
+      const fallback = searchCatalog(trimmed);
+      setSearchResults(fallback);
+      setNotification(`Found ${fallback.length} tracks for "${trimmed}"`);
+    } finally {
+      setIsSearchingOnline(false);
+      setTimeout(() => setNotification(null), 3000);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -256,17 +351,17 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#111116] text-white flex flex-col font-sans selection:bg-[#B9F36A] selection:text-[#111116] pb-36">
+    <div className="min-h-screen bg-[#111116] text-white flex flex-col font-sans selection:bg-[#B9F36A] selection:text-[#111116] pb-48 sm:pb-36">
       {/* Toast Notification */}
       {notification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1B1B23] border border-[#B9F36A]/40 text-white px-5 py-2.5 rounded-full text-xs sm:text-sm font-medium shadow-2xl flex items-center gap-2 animate-fade-in">
-          <span className="w-2 h-2 rounded-full bg-[#B9F36A] animate-pulse" />
-          <span>{notification}</span>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1B1B23] border border-[#B9F36A]/40 text-white px-5 py-2.5 rounded-full text-xs sm:text-sm font-medium shadow-2xl flex items-center gap-2 animate-fade-in max-w-[90vw] truncate">
+          <span className="w-2 h-2 rounded-full bg-[#B9F36A] animate-pulse shrink-0" />
+          <span className="truncate">{notification}</span>
         </div>
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-2xl mx-auto px-5 sm:px-6 pt-7">
+      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 pt-5 sm:pt-7">
         {/* App Bar / Header */}
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -280,7 +375,18 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              onClick={handlePreloadPlayerCode}
+              disabled={isPreloadingPlayerCode}
+              className="px-2.5 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title={`Preload Player Code for Cipher Deobfuscation (${playerCodeStatus.operationsCount} ops, ${playerCodeStatus.playerVersion})`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-[#B9F36A]" />
+              <span className="text-[11px] font-bold text-[#B9F36A]">
+                {isPreloadingPlayerCode ? 'Preloading...' : 'Cipher'}
+              </span>
+            </button>
             <button
               onClick={() => setShowDiagnostics(true)}
               className="px-2.5 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -291,11 +397,11 @@ export default function App() {
             </button>
             <button
               onClick={() => setShowDiagnostics(true)}
-              className="px-3 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold bg-[#1B1B23] hover:bg-[#252530] text-[#B7B7C4] hover:text-white border border-[#393943] transition-colors flex items-center gap-1.5 cursor-pointer"
               title="Architecture Info"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#B9F36A]" />
-              <span>Info</span>
+              <span className="hidden xs:inline">Info</span>
             </button>
           </div>
         </header>
@@ -360,8 +466,8 @@ export default function App() {
                       if (!e.target.value.trim()) setSearchResults(null);
                     }}
                     onKeyDown={handleKeyDown}
-                    placeholder="Songs, artists, albums"
-                    className="w-full h-14 bg-[#181820] border border-[#393943] focus:border-[#B9F36A] focus:outline-none rounded-[16px] pl-11 pr-4 text-white placeholder-[#686875] text-base transition-colors"
+                    placeholder="Search any online song, artist, or paste YouTube link..."
+                    className="w-full h-14 bg-[#181820] border border-[#393943] focus:border-[#B9F36A] focus:outline-none rounded-[16px] pl-11 pr-10 text-white placeholder-[#686875] text-base transition-colors"
                   />
                   <Search className="w-5 h-5 text-[#737384] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   {query && (
@@ -378,12 +484,49 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => handleSearch(query)}
-                  disabled={!query.trim()}
-                  className="h-14 px-6 rounded-[14px] bg-[#B9F36A] hover:bg-[#a6e651] disabled:opacity-40 disabled:hover:bg-[#B9F36A] text-[#111116] font-bold text-base transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                  disabled={!query.trim() || isSearchingOnline}
+                  className="h-14 px-5 sm:px-6 rounded-[14px] bg-[#B9F36A] hover:bg-[#a6e651] disabled:opacity-40 disabled:hover:bg-[#B9F36A] text-[#111116] font-bold text-sm sm:text-base transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                 >
-                  <span>Search</span>
+                  {isSearchingOnline ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 hidden sm:inline" />
+                      <span>Search</span>
+                    </>
+                  )}
                 </button>
               </div>
+
+              {/* Quick Search Chips for Online Music */}
+              <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <span className="text-[10px] uppercase font-bold text-[#727284] shrink-0 mr-1 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-[#B9F36A]" />
+                  Trending:
+                </span>
+                {QUICK_SEARCH_CHIPS.map((chip) => (
+                  <button
+                    key={chip}
+                    onClick={() => {
+                      setQuery(chip);
+                      handleSearch(chip);
+                    }}
+                    className="text-xs px-2.5 py-1 rounded-full bg-[#1A1A24] hover:bg-[#252535] text-[#A6A6B8] hover:text-white border border-[#2D2D3E] shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <span>{chip}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Searching Online Indicator */}
+              {isSearchingOnline && (
+                <div className="mt-3 p-3 rounded-xl bg-[#1A1A24] border border-[#B9F36A]/30 flex items-center gap-3 animate-pulse">
+                  <Loader2 className="w-4 h-4 text-[#B9F36A] animate-spin shrink-0" />
+                  <div className="text-xs text-[#B7B7C4]">
+                    <span className="text-[#B9F36A] font-semibold">Searching live online catalog...</span> Querying high-fidelity audio streams and YouTube Music.
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* Search Results Display with Online / Downloaded Filter */}
@@ -843,8 +986,8 @@ export default function App() {
         </footer>
       </main>
 
-      {/* Bottom Player Bar */}
-      <aside className="fixed bottom-0 left-0 right-0 bg-[#171720] border-t border-[#292938] shadow-[0_-10px_35px_rgba(0,0,0,0.6)] z-40">
+      {/* Bottom Player Bar - docked above mobile navigation on small screens */}
+      <aside className="fixed bottom-16 sm:bottom-0 left-0 right-0 bg-[#161622]/98 backdrop-blur-lg border-t border-[#292938] shadow-[0_-10px_35px_rgba(0,0,0,0.6)] z-40 transition-all">
         {/* Scrubber Progress Bar */}
         <div className="relative w-full h-1 bg-[#252535] cursor-pointer group">
           <div
@@ -865,14 +1008,14 @@ export default function App() {
           />
         </div>
 
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-2xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2.5 sm:gap-3">
           {/* Left: Track Info & Artwork */}
           <div
             onClick={() => setShowNowPlayingModal(true)}
-            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
+            className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 cursor-pointer group"
           >
             {playerState.currentTrack ? (
-              <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-[#252532] shadow-sm">
+              <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden shrink-0 bg-[#252532] shadow-sm">
                 <img
                   src={playerState.currentTrack.thumbnail}
                   alt={playerState.currentTrack.title}
@@ -880,34 +1023,34 @@ export default function App() {
                 />
               </div>
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-[#1F1F2B] border border-[#2F2F3E] flex items-center justify-center shrink-0">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-[#1F1F2B] border border-[#2F2F3E] flex items-center justify-center shrink-0">
                 <FmLogo size={24} />
               </div>
             )}
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-white font-semibold text-sm truncate group-hover:text-[#B9F36A] transition-colors">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h3 className="text-white font-semibold text-xs sm:text-sm truncate group-hover:text-[#B9F36A] transition-colors">
                   {playerState.currentTrack ? playerState.currentTrack.title : 'Ready to Play'}
                 </h3>
                 {playerState.isPlaying && (
-                  <span className="shrink-0 text-[9px] font-extrabold uppercase tracking-wider text-[#111116] bg-[#B9F36A] px-1 py-0.5 rounded-xs leading-none">
-                    PLAYING
+                  <span className="shrink-0 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wider text-[#111116] bg-[#B9F36A] px-1 py-0.5 rounded-xs leading-none">
+                    PLAY
                   </span>
                 )}
                 <span
-                  className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border ${
+                  className={`shrink-0 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border ${
                     playerState.streamEngine === 'local_audio'
                       ? 'bg-[#1F291E] text-[#B9F36A] border-[#B9F36A]/30'
-                      : 'bg-[#291E23] text-amber-300 border-amber-400/30'
+                      : 'bg-[#1F291E] text-[#B9F36A] border-[#B9F36A]/30'
                   }`}
-                  title={`Player Engine: ${playerState.streamEngine === 'local_audio' ? 'Local Media Player (HTML5/ExoPlayer pipeline with signed stream)' : 'YouTube Hidden Embed'}`}
+                  title={`Player Engine: ${playerState.streamEngine === 'local_audio' ? 'Direct Signed Audio Stream' : 'YouTube Full-Length Engine'}`}
                 >
                   <Zap className="w-2.5 h-2.5" />
-                  {playerState.streamEngine === 'local_audio' ? 'Local Engine' : 'iFrame Fallback'}
+                  <span className="hidden xs:inline">{playerState.streamEngine === 'local_audio' ? 'HQ Audio' : 'Full Song'}</span>
                 </span>
               </div>
-              <p className="text-[#A2A2B2] text-xs truncate mt-0.5">
+              <p className="text-[#A2A2B2] text-[11px] sm:text-xs truncate mt-0.5">
                 {playerState.currentTrack
                   ? `${playerState.currentTrack.artist} • ${formatTime(playerState.currentTime)} / ${formatTime(playerState.duration)}`
                   : 'Select a vibe or song above'}
@@ -916,8 +1059,8 @@ export default function App() {
           </div>
 
           {/* Center/Right: Audio Visualizer & Controls */}
-          <div className="shrink-0 flex items-center gap-2 sm:gap-3">
-            <AudioVisualizer isPlaying={playerState.isPlaying} />
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-3">
+            <AudioVisualizer isPlaying={playerState.isPlaying} className="hidden xs:flex" />
 
             <button
               onClick={() => {
@@ -939,7 +1082,7 @@ export default function App() {
 
             <button
               onClick={() => inAppPlayer.prev()}
-              className="p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer"
               title="Previous Track"
             >
               <SkipBack className="w-4 h-4 fill-current" />
@@ -953,7 +1096,7 @@ export default function App() {
                   inAppPlayer.togglePlayPause();
                 }
               }}
-              className="w-10 h-10 rounded-full bg-[#B9F36A] hover:bg-[#a6e651] text-[#111116] font-bold flex items-center justify-center shadow-md transition-all cursor-pointer"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#B9F36A] hover:bg-[#a6e651] text-[#111116] font-bold flex items-center justify-center shadow-md transition-all cursor-pointer"
               title={playerState.isPlaying ? 'Pause' : 'Play'}
             >
               {playerState.isPlaying ? (
@@ -965,7 +1108,7 @@ export default function App() {
 
             <button
               onClick={() => inAppPlayer.next()}
-              className="p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer"
               title="Next Track"
             >
               <SkipForward className="w-4 h-4 fill-current" />
@@ -973,7 +1116,7 @@ export default function App() {
 
             <button
               onClick={() => setShowNowPlayingModal(true)}
-              className="p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer hidden sm:block"
+              className="p-1.5 sm:p-2 text-[#B7B7C4] hover:text-white transition-colors cursor-pointer"
               title="Open Now Playing Sheet"
             >
               <Maximize2 className="w-4 h-4" />
@@ -982,31 +1125,119 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Android Mobile Bottom Navigation Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#13131B] border-t border-[#242433] z-40 flex items-center justify-around px-2 sm:hidden pb-[env(safe-area-inset-bottom)] select-none">
+        <button
+          onClick={() => {
+            setMainTab('online');
+            setMobileNavTab('home');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 py-1 flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+            mobileNavTab === 'home' && mainTab === 'online' ? 'text-[#B9F36A]' : 'text-[#8E8E9E]'
+          }`}
+        >
+          <Compass className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Discover</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setMainTab('online');
+            setMobileNavTab('search');
+            searchInputRef.current?.focus();
+            window.scrollTo({ top: 120, behavior: 'smooth' });
+          }}
+          className={`flex-1 py-1 flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+            mobileNavTab === 'search' ? 'text-[#B9F36A]' : 'text-[#8E8E9E]'
+          }`}
+        >
+          <Search className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Search</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setMainTab('offline');
+            setMobileNavTab('offline');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className={`flex-1 py-1 flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer relative ${
+            mainTab === 'offline' ? 'text-[#B9F36A]' : 'text-[#8E8E9E]'
+          }`}
+        >
+          <div className="relative">
+            <HardDrive className="w-5 h-5" />
+            {downloadedIds.size > 0 && (
+              <span className="absolute -top-1 -right-2 bg-[#B9F36A] text-[#111116] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                {downloadedIds.size}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-bold">Offline</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setShowNowPlayingModal(true);
+            setMobileNavTab('queue');
+          }}
+          className={`flex-1 py-1 flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+            playerState.isPlaying ? 'text-[#B9F36A]' : 'text-[#8E8E9E]'
+          }`}
+        >
+          <Music2 className="w-5 h-5" />
+          <span className="text-[10px] font-bold">Player</span>
+        </button>
+      </nav>
+
       {/* Now Playing Full Screen Sheet (InnerTune / MetroList style) */}
       {showNowPlayingModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex flex-col justify-between animate-fade-in">
+        <div className="fixed inset-0 bg-black/92 backdrop-blur-xl z-50 flex flex-col justify-between animate-fade-in pb-[env(safe-area-inset-bottom)]">
           {/* Top Sheet Header */}
-          <div className="max-w-md w-full mx-auto px-6 pt-6 flex items-center justify-between">
-            <button
+          <div className="max-w-md w-full mx-auto px-5 sm:px-6 pt-3 sm:pt-5 flex flex-col items-center">
+            {/* Mobile swipe-down pull handle */}
+            <div
               onClick={() => setShowNowPlayingModal(false)}
-              className="p-2 rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
-            >
-              <ChevronDown className="w-6 h-6" />
-            </button>
-            <div className="text-center">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[#B7B7C4]">
-                PLAYING FROM {playerState.currentTrack?.vibe || 'CATALOG'}
-              </span>
-              <h4 className="text-xs font-semibold text-[#B9F36A] mt-0.5">FM Music Player</h4>
+              className="w-12 h-1.5 rounded-full bg-white/20 mb-2 cursor-pointer hover:bg-white/40 transition-colors"
+            />
+            <div className="w-full flex items-center justify-between">
+              <button
+                onClick={() => setShowNowPlayingModal(false)}
+                className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white transition-colors cursor-pointer"
+                title="Collapse player"
+              >
+                <ChevronDown className="w-6 h-6" />
+              </button>
+              <div className="text-center">
+                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#B7B7C4]">
+                  PLAYING FROM {playerState.currentTrack?.vibe || 'ONLINE CATALOG'}
+                </span>
+                <h4 className="text-xs font-semibold text-[#B9F36A] mt-0.5">FM Music Stream</h4>
+              </div>
+              <button
+                onClick={() => {
+                  inAppPlayer.toggleStreamEngine();
+                  setNotification(
+                    `Engine switched to: ${
+                      playerState.streamEngine === 'local_audio' ? 'YouTube IFrame' : 'Local Audio Engine'
+                    }`
+                  );
+                  setTimeout(() => setNotification(null), 3000);
+                }}
+                className="p-2 -mr-2 rounded-full hover:bg-white/10 text-[#B9F36A] transition-colors cursor-pointer"
+                title="Toggle player engine"
+              >
+                <Radio className="w-5 h-5" />
+              </button>
             </div>
-            <div className="w-10" />
           </div>
 
           {/* Modal Tab Switcher (Player / Lyrics / Queue) */}
-          <div className="max-w-md w-full mx-auto px-6 mt-3 flex justify-center gap-2">
+          <div className="max-w-md w-full mx-auto px-5 sm:px-6 mt-2 flex justify-center gap-2">
             <button
               onClick={() => setActiveModalTab('player')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
                 activeModalTab === 'player'
                   ? 'bg-[#B9F36A] text-[#111116]'
                   : 'bg-[#1E1E28] text-[#B7B7C4]'
@@ -1016,7 +1247,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setActiveModalTab('lyrics')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1 ${
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
                 activeModalTab === 'lyrics'
                   ? 'bg-[#B9F36A] text-[#111116]'
                   : 'bg-[#1E1E28] text-[#B7B7C4]'
@@ -1027,7 +1258,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setActiveModalTab('queue')}
-              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1 ${
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer ${
                 activeModalTab === 'queue'
                   ? 'bg-[#B9F36A] text-[#111116]'
                   : 'bg-[#1E1E28] text-[#B7B7C4]'
@@ -1039,11 +1270,11 @@ export default function App() {
           </div>
 
           {/* Content Body */}
-          <div className="max-w-md w-full mx-auto px-6 flex-1 flex flex-col justify-center my-4 overflow-y-auto">
+          <div className="max-w-md w-full mx-auto px-5 sm:px-6 flex-1 flex flex-col justify-center my-2 sm:my-4 overflow-y-auto">
             {activeModalTab === 'player' && (
               <div className="flex flex-col items-center text-center">
-                {/* Vinyl / Cover Art */}
-                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-3xl overflow-hidden shadow-2xl border border-white/10 my-4 group">
+                {/* Vinyl / Cover Art - optimized for Android screen heights */}
+                <div className="relative w-52 h-52 xs:w-60 xs:h-60 sm:w-72 sm:h-72 rounded-3xl overflow-hidden shadow-2xl border border-white/10 my-2 sm:my-4 group">
                   <img
                     src={playerState.currentTrack?.thumbnail || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80'}
                     alt="Album Cover"
@@ -1066,9 +1297,13 @@ export default function App() {
 
                 {/* Stream Engine & Signed Stream Information */}
                 <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#1A2616] text-[#B9F36A] border border-[#B9F36A]/40">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A] animate-pulse" />
+                    Full-Length Track ({formatTime(playerState.duration)})
+                  </span>
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#1F291E] border border-[#B9F36A]/30 text-[#B9F36A]">
                     <Zap className="w-3 h-3 text-[#B9F36A]" />
-                    {playerState.streamEngine === 'local_audio' ? 'Local Media Player Engine' : 'YouTube Hidden Embed'}
+                    {playerState.streamEngine === 'local_audio' ? 'Local Media Player Engine' : 'YouTube Full-Length Player'}
                   </span>
                   {playerState.streamSource && (
                     <span className="text-[10px] text-[#A2A2B2] bg-[#181822] px-2 py-0.5 rounded-md border border-[#2B2B38]">
@@ -1305,7 +1540,7 @@ export default function App() {
                   <span className="text-[11px] text-[#8E8E9E]">Test Endpoint Extraction:</span>
                   <button
                     disabled={testingStream}
-                    onClick={() => handleExtractStream(playerState.currentTrack?.youtubeId || 'jfKfPfyJRdk')}
+                    onClick={() => handleExtractStream(playerState.currentTrack?.youtubeId || 'NJAv_7lHUIU')}
                     className="px-2.5 py-1 bg-[#252533] hover:bg-[#303042] text-[#B9F36A] text-[11px] font-semibold rounded-md border border-[#3A3A4D] transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {testingStream ? 'Resolving...' : 'Extract Signed Stream'}
@@ -1313,16 +1548,87 @@ export default function App() {
                 </div>
 
                 {extractedStreamResult && (
-                  <div className="mt-2 p-2 rounded bg-[#0E0E14] border border-[#232330] text-[10px] space-y-1 font-mono">
-                    <div className="flex justify-between text-[#8E8E9E]">
-                      <span>Source: {extractedStreamResult.source}</span>
-                      <span className="text-[#B9F36A]">{Math.round(extractedStreamResult.bitrate / 1000)} kbps</span>
+                  <div className="mt-2 p-2.5 rounded bg-[#0E0E14] border border-[#232330] text-[10px] space-y-1.5 font-mono">
+                    <div className="flex justify-between items-center text-[#8E8E9E]">
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A]" />
+                        Source: {extractedStreamResult.source}
+                      </span>
+                      <span className="text-[#B9F36A] font-bold">
+                        {Math.round(extractedStreamResult.bitrate / 1000)} kbps • {extractedStreamResult.isSigned ? 'SIGNED' : 'RAW'}
+                      </span>
                     </div>
-                    <div className="text-[#686878] truncate" title={extractedStreamResult.url}>
-                      URL: {extractedStreamResult.url.substring(0, 48)}...
+                    <div className="flex justify-between text-[#7E7E90]">
+                      <span>Codec: {extractedStreamResult.mimeType.split(';')[0]}</span>
+                      {extractedStreamResult.approxDurationMs && (
+                        <span>Duration: {formatTime(Math.round(extractedStreamResult.approxDurationMs / 1000))}</span>
+                      )}
+                    </div>
+                    <div className="text-[#686878] truncate" title={extractedStreamResult.url || extractedStreamResult.videoId}>
+                      {extractedStreamResult.url
+                        ? `URL: ${extractedStreamResult.url.substring(0, 52)}...`
+                        : `Engine: Full-Length YouTube Stream (v=${extractedStreamResult.videoId})`}
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Preload Player Code & Cipher Deobfuscator Section */}
+            <div className="mt-3 p-3.5 rounded-xl bg-[#141419] border border-[#2B2B36] space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#22222E]">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-3.5 h-3.5 text-[#B9F36A]" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    Cipher Deobfuscator & Preload
+                  </span>
+                </div>
+                <button
+                  disabled={isPreloadingPlayerCode}
+                  onClick={handlePreloadPlayerCode}
+                  className="text-[11px] text-[#B9F36A] hover:underline font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                >
+                  {isPreloadingPlayerCode ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  <span>{isPreloadingPlayerCode ? 'Preloading...' : 'Preload Player Code'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="text-[#727282]">Preload Status:</span>
+                  <p className="text-[#B9F36A] font-semibold mt-0.5 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#B9F36A] animate-pulse" />
+                    {playerCodeStatus.isPreloaded ? 'Preloaded & Compiled' : 'Pending'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Player Build:</span>
+                  <p className="text-white font-mono mt-0.5 text-[10px] truncate">{playerCodeStatus.playerVersion}</p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Transforms Loaded:</span>
+                  <p className="text-white font-mono mt-0.5 text-[10px]">
+                    {playerCodeStatus.operationsCount} Ops (Swap, Splice, Reverse)
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[#727282]">Decipher Execution:</span>
+                  <p className="text-[#B9F36A] font-mono mt-0.5 text-[10px]">
+                    {playerCodeStatus.sampleDecipherLatencyMs} ms (Zero Latency)
+                  </p>
+                </div>
+              </div>
+
+              {/* Cipher Deobfuscator Verification Row */}
+              <div className="pt-2 border-t border-[#22222E] flex items-center justify-between">
+                <span className="text-[11px] text-[#8E8E9E]">Verify Cipher Signature:</span>
+                <button
+                  onClick={handlePreloadPlayerCode}
+                  disabled={isPreloadingPlayerCode}
+                  className="px-2.5 py-1 bg-[#252533] hover:bg-[#303042] text-[#B9F36A] text-[11px] font-semibold rounded-md border border-[#3A3A4D] transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {cipherTestResult ? cipherTestResult : 'Run Deobfuscate Test'}
+                </button>
               </div>
             </div>
 

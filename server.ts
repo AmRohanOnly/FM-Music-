@@ -587,6 +587,58 @@ async function startServer() {
     return res.json({ found: false, provider: 'None', syncedLines: [], plainLines: [] });
   });
 
+  // 5. Same-origin Artwork Image Proxy for CORS-safe Canvas Dynamic Color Extraction
+  app.get('/api/artwork-proxy', async (req, res) => {
+    const rawUrl = String(req.query.url || '').trim();
+    if (!rawUrl) {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'Only HTTPS URLs allowed' });
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    const isAllowedHost =
+      host === 'i.ytimg.com' ||
+      host === 'img.youtube.com' ||
+      host === 'yt3.ggpht.com' ||
+      host.endsWith('.ytimg.com') ||
+      host.endsWith('.googleusercontent.com');
+
+    if (!isAllowedHost) {
+      return res.status(403).json({ error: 'Artwork host not allowlisted' });
+    }
+
+    try {
+      const upstream = await fetch(parsed.toString(), {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(4500),
+      });
+      if (!upstream.ok) {
+        return res.status(upstream.status).end();
+      }
+      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      if (!contentType.startsWith('image/')) {
+        return res.status(415).json({ error: 'Unsupported media type' });
+      }
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.send(buffer);
+    } catch {
+      return res.status(502).end();
+    }
+  });
+
   // Vite middleware in dev or static serving in production
   const isProd = process.env.NODE_ENV === 'production';
   const distPath = path.join(__dirname, 'dist');

@@ -70,6 +70,11 @@ import {
 } from './services/libraryStore';
 import { fetchTrackLyrics, LyricsResult } from './services/lyricsService';
 import { BUILTIN_EQ_PROFILES } from './services/webAudioEqualizer';
+import {
+  extractArtworkPalette,
+  applyDynamicPaletteToDocument,
+  DynamicPalette,
+} from './services/dynamicColorExtractor';
 import { TrackArtwork } from './components/TrackArtwork';
 import { PlaylistPickerModal } from './components/PlaylistPickerModal';
 import { SettingsModal, RestoreMode } from './components/SettingsModal';
@@ -253,11 +258,34 @@ export default function App() {
     }, durationMs);
   };
 
-  // Apply theme CSS custom properties & root .dark/.light class
+  const [dynamicPalette, setDynamicPalette] = useState<DynamicPalette | null>(null);
+
+  // Apply theme CSS custom properties, root .dark/.light class, and Dynamic Color from artwork
   useEffect(() => {
-    applyThemeToDocument(themeId);
+    const activeTheme = applyThemeToDocument(themeId);
     saveStoredTheme(themeId);
-  }, [themeId]);
+
+    const thumb = playerState.currentTrack?.thumbnail;
+    if (!customization.dynamicColorEnabled || !thumb) {
+      setDynamicPalette(null);
+      return;
+    }
+
+    let cancelled = false;
+    extractArtworkPalette(thumb, activeTheme.isLight).then((palette) => {
+      if (cancelled) return;
+      if (palette) {
+        applyDynamicPaletteToDocument(palette);
+        setDynamicPalette(palette);
+      } else {
+        setDynamicPalette(null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [themeId, customization.dynamicColorEnabled, playerState.currentTrack?.thumbnail]);
 
   // Apply Liquid Glass, Equalizer, Smart Shuffle & Player customization
   useEffect(() => {
@@ -2010,6 +2038,24 @@ export default function App() {
                         ))}
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-xs font-semibold">Dynamic Color</span>
+                      <button
+                        onClick={() =>
+                          handleUpdateCustomization({
+                            dynamicColorEnabled: !customization.dynamicColorEnabled,
+                          })
+                        }
+                        className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1.5 ${
+                          customization.dynamicColorEnabled
+                            ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)]'
+                            : 'liquid-glass-button text-[var(--fm-text-muted)]'
+                        }`}
+                      >
+                        {customization.dynamicColorEnabled ? 'On' : 'Off'}
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -2428,6 +2474,7 @@ export default function App() {
           inAppPlayer.resetSkipHistory();
           showToast('Smart Shuffle skip history cleared');
         }}
+        dynamicAccentHex={dynamicPalette?.accentHex || null}
         likedTracks={likedTracks}
         playlists={playlists}
         downloadedTracks={downloadedTracks}

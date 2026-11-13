@@ -173,6 +173,7 @@ export interface PlayerCustomization {
   lyricsProvider: LyricsProviderPreference;
   autoFetchLyrics: boolean;
   smartShuffleEnabled: boolean;
+  dynamicColorEnabled: boolean;
   equalizer: EqualizerConfig;
 }
 
@@ -187,6 +188,7 @@ export const DEFAULT_PLAYER_CUSTOMIZATION: PlayerCustomization = {
   lyricsProvider: 'auto',
   autoFetchLyrics: true,
   smartShuffleEnabled: true,
+  dynamicColorEnabled: true,
   equalizer: { ...DEFAULT_EQUALIZER_CONFIG },
 };
 
@@ -303,6 +305,10 @@ export function normalizeCustomization(raw: any): PlayerCustomization {
       typeof raw?.smartShuffleEnabled === 'boolean'
         ? raw.smartShuffleEnabled
         : DEFAULT_PLAYER_CUSTOMIZATION.smartShuffleEnabled,
+    dynamicColorEnabled:
+      typeof raw?.dynamicColorEnabled === 'boolean'
+        ? raw.dynamicColorEnabled
+        : DEFAULT_PLAYER_CUSTOMIZATION.dynamicColorEnabled,
     equalizer: normalizeEqualizerConfig(raw?.equalizer),
   };
 }

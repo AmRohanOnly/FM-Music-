@@ -56,6 +56,7 @@ interface SettingsModalProps {
   onSetSleepAtTrackEnd: (enabled: boolean) => void;
   skippedTrackCount: number;
   onResetSkipHistory: () => void;
+  dynamicAccentHex?: string | null;
   likedTracks: Track[];
   playlists: UserPlaylist[];
   downloadedTracks: Track[];
@@ -83,6 +84,7 @@ export function SettingsModal({
   onSetSleepAtTrackEnd,
   skippedTrackCount,
   onResetSkipHistory,
+  dynamicAccentHex,
   likedTracks,
   playlists,
   downloadedTracks,
@@ -344,6 +346,35 @@ export function SettingsModal({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Dynamic Color from Track Artwork */}
+              <div className="liquid-glass rounded-2xl p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span
+                      style={{ backgroundColor: dynamicAccentHex || 'var(--fm-accent)' }}
+                      className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0"
+                    />
+                    <h4 className="text-sm font-bold">Dynamic Color</h4>
+                  </div>
+                  <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-snug">
+                    Automatically adapts app accent and glow orbs to match the current track&apos;s album art
+                    {customization.dynamicColorEnabled && dynamicAccentHex ? ` · ${dynamicAccentHex.toUpperCase()}` : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    onUpdateCustomization({ dynamicColorEnabled: !customization.dynamicColorEnabled })
+                  }
+                  className={`min-h-10 px-4 rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-colors ${
+                    customization.dynamicColorEnabled
+                      ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)]'
+                      : 'liquid-glass-button text-[var(--fm-text-muted)]'
+                  }`}
+                >
+                  {customization.dynamicColorEnabled ? 'On' : 'Off'}
+                </button>
               </div>
 
               {/* Liquid Glass Effect Customizer */}

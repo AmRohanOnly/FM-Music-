@@ -23,7 +23,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Hindi hits',
     duration: 269,
     durationFormatted: '4:29',
-    thumbnail: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/NJAv_7lHUIU/hqdefault.jpg',
     lyrics: [
       'Mujhko itna bataye koyi',
       'Kaise tujhse dil na lagaye koyi',
@@ -42,7 +42,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Hindi hits',
     duration: 262,
     durationFormatted: '4:22',
-    thumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/YALvuUpY_b0/hqdefault.jpg',
     lyrics: [
       'Tu mera koyi na hoke bhi kuch laage',
       'Kiya re jo bhi tune kiya re',
@@ -60,7 +60,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Hindi hits',
     duration: 231,
     durationFormatted: '3:51',
-    thumbnail: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/Dm6YRJHy64c/hqdefault.jpg',
     lyrics: [
       'Teri meri gallan ho gayi mashhur',
       'Kar na kabhi tu mujhe nazron se door',
@@ -77,7 +77,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Hindi hits',
     duration: 201,
     durationFormatted: '3:21',
-    thumbnail: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/V_jp5_VAzXk/hqdefault.jpg',
   },
 
   // New releases
@@ -90,7 +90,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'New releases',
     duration: 229,
     durationFormatted: '3:49',
-    thumbnail: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/FXovf5dsRTw/hqdefault.jpg',
     lyrics: [
       'Sí, sabes que ya llevo un rato mirándote',
       'Tengo que bailar contigo hoy',
@@ -107,7 +107,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'New releases',
     duration: 234,
     durationFormatted: '3:54',
-    thumbnail: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/xTvyyoF_LZY/hqdefault.jpg',
     lyrics: [
       'The club isn\'t the best place to find a lover',
       'So the bar is where I go',
@@ -124,7 +124,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'New releases',
     duration: 355,
     durationFormatted: '5:55',
-    thumbnail: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/BSTsnWoslP4/hqdefault.jpg',
   },
 
   // Chill
@@ -137,7 +137,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Chill',
     duration: 180,
     durationFormatted: '3:00',
-    thumbnail: 'https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg',
     lyrics: ['(Instrumental chill soothing waves & gentle beats)'],
   },
   {
@@ -149,7 +149,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Chill',
     duration: 195,
     durationFormatted: '3:15',
-    thumbnail: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/5qap5aO4i9A/hqdefault.jpg',
   },
   {
     id: 'chill-3',
@@ -160,7 +160,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Chill',
     duration: 239,
     durationFormatted: '3:59',
-    thumbnail: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/WrWcOLlmv7k/hqdefault.jpg',
   },
 
   // Indie
@@ -173,7 +173,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Indie',
     duration: 241,
     durationFormatted: '4:01',
-    thumbnail: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/cULQhvuq1Zc/hqdefault.jpg',
     lyrics: [
       'All I am is a man',
       'I want the world in my hands',
@@ -191,7 +191,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Indie',
     duration: 205,
     durationFormatted: '3:25',
-    thumbnail: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/En_6WWOWh8E/hqdefault.jpg',
   },
 
   // Focus
@@ -204,7 +204,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Focus',
     duration: 487,
     durationFormatted: '8:07',
-    thumbnail: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/eQ6--TNre9k/hqdefault.jpg',
   },
   {
     id: 'focus-2',
@@ -215,7 +215,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Focus',
     duration: 240,
     durationFormatted: '4:00',
-    thumbnail: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/4xDzrJKXOOY/hqdefault.jpg',
   },
 
   // Workout
@@ -228,7 +228,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Workout',
     duration: 244,
     durationFormatted: '4:04',
-    thumbnail: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/S-LO6dctBms/hqdefault.jpg',
     lyrics: [
       'Risin\' up, back on the street',
       'Did my time, took my chances',
@@ -246,7 +246,7 @@ export const CURATED_CATALOG: Track[] = [
     vibe: 'Workout',
     duration: 357,
     durationFormatted: '5:57',
-    thumbnail: 'https://images.unsplash.com/photo-1526478806334-5fd488fcaabc?w=300&auto=format&fit=crop&q=80',
+    thumbnail: 'https://i.ytimg.com/vi/oMfMUfgjiLg/hqdefault.jpg',
   },
 ];
 

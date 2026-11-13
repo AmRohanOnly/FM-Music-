@@ -428,6 +428,165 @@ async function startServer() {
     });
   });
 
+  // 4. Lyrics Provider Endpoint (LRCLIB synced + plain, Lyrics.ovh fallback, optional Genius)
+  app.get('/api/lyrics', async (req, res) => {
+    const rawTitle = String(req.query.title || '').trim();
+    const rawArtist = String(req.query.artist || '').trim();
+    const duration = Number(req.query.duration || 0);
+    const providerPref = String(req.query.provider || 'auto').toLowerCase();
+
+    if (!rawTitle) {
+      return res.status(400).json({ found: false, error: 'title is required', syncedLines: [], plainLines: [] });
+    }
+
+    const cleanTitle = rawTitle
+      .replace(/\(feat\.[^)]*\)/gi, '')
+      .replace(/\(ft\.[^)]*\)/gi, '')
+      .replace(/\(from[^)]*\)/gi, '')
+      .replace(/\(official[^)]*\)/gi, '')
+      .replace(/\[[^\]]*\]/g, '')
+      .replace(/\s*-\s*(official|lyric|audio|video).*$/i, '')
+      .trim();
+
+    const cleanArtist = rawArtist
+      .split(/,|&|\bft\.?\b|\bfeat\.?\b/i)[0]
+      .trim();
+
+    const parseLrc = (lrcText: string): Array<{ time: number; text: string }> => {
+      const lines: Array<{ time: number; text: string }> = [];
+      for (const rawLine of lrcText.split(/\r?\n/)) {
+        const match = rawLine.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
+        if (!match) continue;
+        const mins = parseInt(match[1], 10);
+        const secs = parseInt(match[2], 10);
+        const msPart = match[3] ? match[3].padEnd(3, '0').slice(0, 3) : '000';
+        const time = mins * 60 + secs + parseInt(msPart, 10) / 1000;
+        const text = match[4].trim();
+        if (text) lines.push({ time, text });
+      }
+      return lines;
+    };
+
+    const tryLrclib = async () => {
+      const headers = { 'User-Agent': 'FM-Music-Player/1.0 (https://github.com/fm-music)' };
+
+      // Direct /api/get first when artist & title are present
+      if (cleanArtist) {
+        try {
+          const getParams = new URLSearchParams({
+            track_name: cleanTitle || rawTitle,
+            artist_name: cleanArtist,
+          });
+          if (duration > 0) getParams.set('duration', String(Math.round(duration)));
+          const r = await fetch(`https://lrclib.net/api/get?${getParams.toString()}`, {
+            headers,
+            signal: AbortSignal.timeout(4500),
+          });
+          if (r.ok) {
+            const item = await r.json();
+            const syncedLines = typeof item?.syncedLyrics === 'string' ? parseLrc(item.syncedLyrics) : [];
+            const plainLines =
+              typeof item?.plainLyrics === 'string'
+                ? item.plainLyrics.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean)
+                : [];
+            if (syncedLines.length > 0 || plainLines.length > 0) {
+              return {
+                found: true,
+                provider: syncedLines.length > 0 ? 'LRCLIB (Synced)' : 'LRCLIB',
+                syncedLines,
+                plainLines: plainLines.length > 0 ? plainLines : syncedLines.map((l) => l.text),
+              };
+            }
+          }
+        } catch {
+          // fall through to LRCLIB search
+        }
+      }
+
+      // Fuzzy /api/search
+      try {
+        const q = `${cleanTitle || rawTitle} ${cleanArtist}`.trim();
+        const r = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`, {
+          headers,
+          signal: AbortSignal.timeout(4500),
+        });
+        if (r.ok) {
+          const arr = await r.json();
+          if (Array.isArray(arr) && arr.length > 0) {
+            const best =
+              arr.find((entry: any) => typeof entry?.syncedLyrics === 'string' && entry.syncedLyrics.trim()) ||
+              arr.find((entry: any) => typeof entry?.plainLyrics === 'string' && entry.plainLyrics.trim());
+            if (best) {
+              const syncedLines = typeof best.syncedLyrics === 'string' ? parseLrc(best.syncedLyrics) : [];
+              const plainLines =
+                typeof best.plainLyrics === 'string'
+                  ? best.plainLyrics.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean)
+                  : [];
+              if (syncedLines.length > 0 || plainLines.length > 0) {
+                return {
+                  found: true,
+                  provider: syncedLines.length > 0 ? 'LRCLIB (Synced)' : 'LRCLIB',
+                  syncedLines,
+                  plainLines: plainLines.length > 0 ? plainLines : syncedLines.map((l) => l.text),
+                };
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      return null;
+    };
+
+    const tryLyricsOvh = async () => {
+      if (!cleanArtist || !(cleanTitle || rawTitle)) return null;
+      try {
+        const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(
+          cleanTitle || rawTitle
+        )}`;
+        const r = await fetch(url, { signal: AbortSignal.timeout(4500) });
+        if (r.ok) {
+          const data = await r.json();
+          if (typeof data?.lyrics === 'string' && data.lyrics.trim()) {
+            const plainLines = data.lyrics
+              .split(/\r?\n/)
+              .map((l: string) => l.trim())
+              .filter(Boolean);
+            if (plainLines.length > 0) {
+              return {
+                found: true,
+                provider: 'Lyrics.ovh',
+                syncedLines: [],
+                plainLines,
+              };
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return null;
+    };
+
+    if (providerPref === 'lyricsovh') {
+      const ovh = await tryLyricsOvh();
+      if (ovh) return res.json(ovh);
+      return res.json({ found: false, provider: 'Lyrics.ovh', syncedLines: [], plainLines: [] });
+    }
+
+    const lrc = await tryLrclib();
+    if (lrc) return res.json(lrc);
+
+    if (providerPref !== 'lrclib') {
+      const ovh = await tryLyricsOvh();
+      if (ovh) return res.json(ovh);
+    }
+
+    return res.json({ found: false, provider: 'None', syncedLines: [], plainLines: [] });
+  });
+
   // Vite middleware in dev or static serving in production
   const isProd = process.env.NODE_ENV === 'production';
   const distPath = path.join(__dirname, 'dist');

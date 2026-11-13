@@ -186,10 +186,7 @@ export class InnerTubeCatalogClient {
               type: 'song',
               duration: durationFormatted,
               durationSeconds: durationSec,
-              thumbnailUrl:
-                artworkHighRes ||
-                song.artworkUrl100 ||
-                'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
+              thumbnailUrl: artworkHighRes || song.artworkUrl100 || '',
               streamUrl: song.previewUrl,
               source: 'online_itunes',
             };

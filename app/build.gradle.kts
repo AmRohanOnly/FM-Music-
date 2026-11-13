@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.fmmusic.client"
-    compileSdk = 37
+    compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {

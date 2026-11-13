@@ -52,7 +52,26 @@ jobs:
           -keyalg RSA -keysize 2048 -validity 10000
           -dname 'CN=Android Debug,O=Android,C=US'
       - name: Build debug APK and run unit tests
-        run: gradle --no-daemon --stacktrace :app:assembleDebug :app:testDebugUnitTest
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --console=plain :app:assembleDebug :app:testDebugUnitTest 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+          build_status=${PIPESTATUS[0]}
+          if [ "$build_status" -ne 0 ]; then
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          log = (Path(os.environ['RUNNER_TEMP']) / 'android-build.log').read_text()
+          start = log.find('FAILURE:')
+          details = log[start:] if start >= 0 else log[-12000:]
+          details = details[:12000]
+          escaped = details.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=Android build failure::{escaped}')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Android build failure\n\n```text\n' + details + '\n```\n')
+          PY
+          fi
+          exit "$build_status"
       - name: Package APK
         run: |
           mkdir -p packages

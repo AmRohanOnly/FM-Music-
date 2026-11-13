@@ -29,3 +29,18 @@ A native Android music client built with Kotlin, Jetpack Compose, and Media3 Exo
 ```
 
 Generated APK output: `app/build/outputs/apk/debug/app-debug.apk`
+
+## Download an Android APK
+
+The **Android APK** GitHub Actions workflow builds a debug APK and runs unit tests
+on pushes to `main` and `arena/**` branches. It can also be run manually from the
+Actions tab once the workflow is on the default branch. CI installs Java 17,
+Gradle 8.13, and the Android SDK; a local Gradle wrapper is not required by CI.
+
+Open a successful run and download its `FM-Music-debug-<commit>` artifact. It
+contains `FM-Music-debug.apk`, the source commit, and SHA-256 checksums. Extract
+it into `packages/` locally (this folder is ignored by Git).
+
+These APKs use a disposable debug signing key, not a production release key.
+Installing a later build may require uninstalling the previous build, which
+removes its local app data. Artifacts are retained for 30 days.

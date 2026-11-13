@@ -3,3 +3,7 @@
 local.properties
 .idea/
 *.iml
+
+# Local APK downloads and disposable signing keys
+packages/
+*.keystore

@@ -212,6 +212,7 @@ const STORAGE_KEYS = {
   DOWNLOADED_IDS: 'fm_downloaded_ids',
   DOWNLOADED_TRACKS: 'fm_downloaded_tracks',
   CUSTOMIZATION: 'fm_player_customization',
+  SEARCH_HISTORY: 'fm_search_history',
 };
 
 export function loadStoredTheme(): ThemeId {
@@ -601,3 +602,47 @@ export function mergePlaylists(existing: UserPlaylist[], incoming: UserPlaylist[
   }
   return Array.from(map.values());
 }
+
+export const MAX_SEARCH_HISTORY = 5;
+
+export function addSearchHistoryItem(
+  existing: string[],
+  query: string,
+  limit = MAX_SEARCH_HISTORY
+): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return existing.slice(0, limit);
+  const lower = trimmed.toLowerCase();
+  const filtered = existing.filter((item) => item.trim().toLowerCase() !== lower);
+  return [trimmed, ...filtered].slice(0, limit);
+}
+
+export function removeSearchHistoryItem(existing: string[], query: string): string[] {
+  const lower = query.trim().toLowerCase();
+  return existing.filter((item) => item.trim().toLowerCase() !== lower);
+}
+
+export function loadSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SEARCH_HISTORY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .slice(0, MAX_SEARCH_HISTORY);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function saveSearchHistory(items: string[]): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.SEARCH_HISTORY,
+      JSON.stringify(items.slice(0, MAX_SEARCH_HISTORY))
+    );
+  } catch {}
+}
+

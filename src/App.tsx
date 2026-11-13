@@ -41,6 +41,7 @@ import {
   Moon,
   SlidersHorizontal,
   RefreshCw,
+  Clock,
 } from 'lucide-react';
 import {
   musicNetworkClient,
@@ -67,6 +68,10 @@ import {
   saveDownloadedTracks,
   mergeUniqueTracks,
   mergePlaylists,
+  loadSearchHistory,
+  saveSearchHistory,
+  addSearchHistoryItem,
+  removeSearchHistoryItem,
 } from './services/libraryStore';
 import { fetchTrackLyrics, LyricsResult } from './services/lyricsService';
 import { BUILTIN_EQ_PROFILES } from './services/webAudioEqualizer';
@@ -243,10 +248,30 @@ export default function App() {
   const [isPreloadingPlayerCode, setIsPreloadingPlayerCode] = useState(false);
   const [cipherTestResult, setCipherTestResult] = useState<string | null>(null);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadSearchHistory());
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [mobileNavTab, setMobileNavTab] = useState<'home' | 'library' | 'offline' | 'queue'>('home');
 
   const notificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, []);
 
   const showToast = (msg: string, durationMs = 3200) => {
     setNotification(msg);
@@ -613,6 +638,13 @@ export default function App() {
       return;
     }
 
+    setIsSearchFocused(false);
+    setSearchHistory((prev) => {
+      const next = addSearchHistoryItem(prev, trimmed);
+      saveSearchHistory(next);
+      return next;
+    });
+
     setSearchFilter('all');
     setIsSearchingOnline(true);
     showToast(`Searching online music catalog for "${trimmed}"...`, 5000);
@@ -649,6 +681,9 @@ export default function App() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSearch(query);
+    } else if (e.key === 'Escape') {
+      setIsSearchFocused(false);
+      searchInputRef.current?.blur();
     }
   };
 
@@ -901,11 +936,12 @@ export default function App() {
             {/* Search Bar Row */}
             <section className="mt-6">
               <div className="flex items-center gap-2.5">
-                <div className="relative flex-1">
+                <div ref={searchContainerRef} className="relative flex-1">
                   <input
                     ref={searchInputRef}
                     type="text"
                     value={query}
+                    onFocus={() => setIsSearchFocused(true)}
                     onChange={(e) => {
                       setQuery(e.target.value);
                       if (!e.target.value.trim()) setSearchResults(null);
@@ -913,6 +949,8 @@ export default function App() {
                     onKeyDown={handleKeyDown}
                     placeholder="Search any online song, artist, or paste YouTube link..."
                     className="w-full h-14 liquid-glass-input focus:border-[var(--fm-accent)] focus:outline-none rounded-2xl pl-11 pr-10 text-[var(--fm-text)] placeholder-[var(--fm-text-muted)]/60 text-base transition-colors"
+                    aria-expanded={isSearchFocused && searchHistory.length > 0}
+                    aria-haspopup="listbox"
                   />
                   <Search className="w-5 h-5 text-[var(--fm-text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   {query && (
@@ -920,12 +958,82 @@ export default function App() {
                       onClick={() => {
                         setQuery('');
                         setSearchResults(null);
+                        searchInputRef.current?.focus();
                       }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-full text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
                       aria-label="Clear search"
                     >
                       <X className="w-4 h-4" />
                     </button>
+                  )}
+
+                  {/* Recent Search History Dropdown (last 5 queries) */}
+                  {isSearchFocused && searchHistory.length > 0 && (
+                    <div
+                      role="listbox"
+                      aria-label="Recent searches"
+                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 liquid-glass-strong rounded-2xl p-2 shadow-2xl animate-fade-in"
+                    >
+                      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[var(--fm-glass-border)]">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--fm-text-muted)]">
+                          Recent Searches
+                        </span>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setSearchHistory([]);
+                            saveSearchHistory([]);
+                            setIsSearchFocused(false);
+                          }}
+                          className="text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-accent)] cursor-pointer px-1.5 py-0.5"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                      <div className="mt-1 space-y-0.5">
+                        {searchHistory.map((item) => (
+                          <div
+                            key={item}
+                            className="flex items-center justify-between gap-1 rounded-xl hover:bg-[var(--fm-glass)] transition-colors"
+                          >
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={query.trim().toLowerCase() === item.toLowerCase()}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setQuery(item);
+                                handleSearch(item);
+                              }}
+                              className="flex-1 min-h-11 px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer min-w-0"
+                            >
+                              <Clock className="w-4 h-4 text-[var(--fm-accent)] shrink-0" />
+                              <span className="text-sm font-medium text-[var(--fm-text)] truncate">
+                                {item}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSearchHistory((prev) => {
+                                  const next = removeSearchHistoryItem(prev, item);
+                                  saveSearchHistory(next);
+                                  return next;
+                                });
+                              }}
+                              className="w-9 h-9 mr-1 rounded-lg flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer shrink-0"
+                              title={`Remove "${item}" from history`}
+                              aria-label={`Remove "${item}" from history`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
                 <button

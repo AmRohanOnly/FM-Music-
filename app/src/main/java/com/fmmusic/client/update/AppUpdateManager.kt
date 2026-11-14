@@ -21,6 +21,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+const val CURRENT_APP_VERSION: String = BuildConfig.VERSION_NAME
+
 data class ReleaseUpdateInfo(
     val tagName: String,
     val versionName: String,
@@ -42,7 +44,7 @@ data class ReleaseUpdateInfo(
 }
 
 data class AppUpdateUiState(
-    val currentVersionName: String = CURRENT_APP_VERSION,
+    val currentVersionName: String = AppUpdateManager.CURRENT_APP_VERSION,
     val currentVersionCode: Int = BuildConfig.VERSION_CODE,
     val githubRepo: String = "",
     val isChecking: Boolean = false,

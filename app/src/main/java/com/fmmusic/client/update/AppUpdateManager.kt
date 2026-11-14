@@ -21,7 +21,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-const val CURRENT_APP_VERSION: String = BuildConfig.VERSION_NAME
+@JvmField
+val CURRENT_APP_VERSION: String = BuildConfig.VERSION_NAME
 
 data class ReleaseUpdateInfo(
     val tagName: String,
@@ -505,7 +506,8 @@ class AppUpdateManager(
     }
 
     companion object {
-        const val CURRENT_APP_VERSION = BuildConfig.VERSION_NAME
+        @JvmField
+        val CURRENT_APP_VERSION: String = BuildConfig.VERSION_NAME
 
         private const val PREFS_NAME = "fm_music_prefs"
         private const val KEY_GITHUB_REPO = "github_repo_slug"

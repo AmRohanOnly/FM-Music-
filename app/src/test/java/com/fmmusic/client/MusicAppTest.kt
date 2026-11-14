@@ -86,7 +86,15 @@ class MusicAppTest {
     fun testAppUpdateVersionComparison() {
         assertTrue(AppUpdateManager.CURRENT_APP_VERSION.isNotBlank())
         assertTrue(AppUpdateManager.compareSemanticVersions("v1.0.1", "1.0.0") > 0)
-        assertTrue(AppUpdateManager.isNewerVersion("v1.0.2", 2, AppUpdateManager.CURRENT_APP_VERSION, 1))
+        assertTrue(AppUpdateManager.isNewerVersion("v1.0.2", 2, "1.0.0", 1))
+        assertFalse(
+            AppUpdateManager.isNewerVersion(
+                AppUpdateManager.CURRENT_APP_VERSION,
+                1,
+                AppUpdateManager.CURRENT_APP_VERSION,
+                1
+            )
+        )
         assertTrue(AppUpdateManager.isNewerVersion("1.1.0", null, "1.0.9", 5))
         assertFalse(AppUpdateManager.isNewerVersion("1.0.0", 1, "1.0.0", 1))
         assertFalse(AppUpdateManager.isNewerVersion("0.9.5", 1, "1.0.0", 2))

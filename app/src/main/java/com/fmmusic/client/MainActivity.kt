@@ -1765,7 +1765,7 @@ private fun AppUpdateSettingsDialog(
                     Text(state.errorMessage, color = Color(0xFFFF7A7A), fontSize = 12.sp)
                 }
 
-                if (state.availableUpdate != null) {
+                state.availableUpdate?.let { available ->
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(
                         onClick = onOpenAvailableUpdate,
@@ -1773,7 +1773,7 @@ private fun AppUpdateSettingsDialog(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
-                            "Install v${state.availableUpdate.versionName} Update",
+                            "Install v${available.versionName} Update",
                             color = Accent,
                             fontWeight = FontWeight.Bold
                         )

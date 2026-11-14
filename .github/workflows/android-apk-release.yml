@@ -41,12 +41,16 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Set up Android SDK (API 35)
+      - name: Set up Android SDK (API 37)
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+          packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
 
       - name: Resolve Version Code & Version Name
         id: meta
@@ -79,29 +83,26 @@ jobs:
             base64 -d debug.keystore.base64 > debug.keystore
           fi
 
-      - name: Grant Gradle Wrapper Execute Permission (or bootstrap Gradle)
+      - name: Select Gradle Binary
         shell: bash
         run: |
           if [[ -f ./gradlew ]]; then
             chmod +x ./gradlew
             echo "GRADLE_CMD=./gradlew" >> "$GITHUB_ENV"
           else
-            GRADLE_VER="8.13"
-            curl -sSL "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" -o /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /tmp
-            echo "GRADLE_CMD=/tmp/gradle-${GRADLE_VER}/bin/gradle" >> "$GITHUB_ENV"
+            echo "GRADLE_CMD=gradle" >> "$GITHUB_ENV"
           fi
 
       - name: Run Android Unit Tests
         run: |
-          $GRADLE_CMD :app:testDebugUnitTest \
+          $GRADLE_CMD :app:testDebugUnitTest --no-daemon --stacktrace \
             -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
             -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
             -PFM_GITHUB_REPO=${{ github.repository }}
 
       - name: Build Signed Release APK
         run: |
-          $GRADLE_CMD :app:assembleRelease \
+          $GRADLE_CMD :app:assembleRelease --no-daemon --stacktrace \
             -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
             -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
             -PFM_GITHUB_REPO=${{ github.repository }}
@@ -172,7 +173,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p ~/.m2
-          cat << 'EOF' > ~/.m2/settings.xml
+          cat > ~/.m2/settings.xml << 'EOF'
           <settings>
             <servers>
               <server>
@@ -184,15 +185,27 @@ jobs:
           </settings>
           EOF
 
-          mvn -B deploy:deploy-file \
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          set +e
+          MVN_LOG=$(mvn -B deploy:deploy-file \
             -DrepositoryId=github \
-            -Durl="https://maven.pkg.github.com/${{ github.repository }}" \
+            -Durl="https://maven.pkg.github.com/${REPO_LOWER}" \
             -DgroupId=com.fmmusic \
             -DartifactId=fm-music-android \
             -Dversion="${{ steps.meta.outputs.version_name }}" \
             -Dpackaging=apk \
             -Dfile="${{ steps.package.outputs.apk_path }}" \
-            -DgeneratePom=true
+            -DgeneratePom=true 2>&1)
+          MVN_STATUS=$?
+          set -e
+          echo "$MVN_LOG"
+          if [[ $MVN_STATUS -ne 0 ]]; then
+            if echo "$MVN_LOG" | grep -qE "409|Conflict"; then
+              echo "Version already published in GitHub Packages; continuing to GitHub Release."
+            else
+              exit $MVN_STATUS
+            fi
+          fi
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

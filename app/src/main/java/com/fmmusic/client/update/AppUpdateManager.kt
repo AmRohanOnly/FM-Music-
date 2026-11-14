@@ -30,7 +30,8 @@ data class ReleaseUpdateInfo(
     val apkDownloadUrl: String,
     val releasePageUrl: String,
     val apkSizeBytes: Long,
-    val publishedAt: String
+    val publishedAt: String,
+    val isMandatory: Boolean = false
 ) {
     val sizeFormatted: String
         get() {
@@ -71,6 +72,9 @@ class AppUpdateManager(
     private fun resolveInitialRepo(): String {
         val saved = prefs.getString(KEY_GITHUB_REPO, null)?.trim().orEmpty()
         if (saved.isNotBlank()) return saved
+        if (BuildConfig.UPDATE_MANIFEST_URL.isNotBlank()) {
+            return BuildConfig.UPDATE_MANIFEST_URL.trim()
+        }
         return BuildConfig.GITHUB_REPO.trim()
     }
 
@@ -111,13 +115,14 @@ class AppUpdateManager(
     }
 
     fun checkForUpdates(forceManual: Boolean = false) {
-        val repo = mutableState.value.githubRepo.trim()
-        if (repo.isBlank() || !repo.contains("/")) {
+        val source = mutableState.value.githubRepo.trim()
+        val isDirectUrl = isDirectManifestUrl(source)
+        if (source.isBlank() || (!isDirectUrl && !source.contains("/"))) {
             if (forceManual) {
                 mutableState.update {
                     it.copy(
                         isChecking = false,
-                        errorMessage = "Enter your GitHub repository (owner/repo) to check for APK updates."
+                        errorMessage = "Enter owner/repo or a direct https://.../update-manifest.json URL."
                     )
                 }
             }
@@ -137,14 +142,18 @@ class AppUpdateManager(
         scope.launch {
             try {
                 val release = withContext(Dispatchers.IO) {
-                    fetchLatestGithubRelease(repo)
+                    if (isDirectUrl) {
+                        fetchDirectManifest(source)
+                    } else {
+                        fetchLatestGithubRelease(source)
+                    }
                 }
 
                 if (release == null) {
                     mutableState.update {
                         it.copy(
                             isChecking = false,
-                            upToDateMessage = if (forceManual) "No APK releases found yet for $repo." else null
+                            upToDateMessage = if (forceManual) "No APK updates published yet at $source." else null
                         )
                     }
                     return@launch
@@ -160,7 +169,7 @@ class AppUpdateManager(
                 val skippedTag = prefs.getString(KEY_SKIPPED_TAG, null)
 
                 if (isNewer) {
-                    val shouldAutoShow = forceManual || skippedTag != release.tagName
+                    val shouldAutoShow = forceManual || release.isMandatory || skippedTag != release.tagName
                     mutableState.update {
                         it.copy(
                             isChecking = false,
@@ -396,6 +405,7 @@ class AppUpdateManager(
         var manifestVersionCode: Int? = null
         var manifestVersionName: String? = null
         var manifestNotes: String? = null
+        var manifestMandatory = false
 
         if (manifestUrl.isNotBlank()) {
             try {
@@ -412,6 +422,7 @@ class AppUpdateManager(
                     }
                     manifestVersionName = mJson.optString("versionName", "").takeIf { it.isNotBlank() }
                     manifestNotes = mJson.optString("releaseNotes", "").takeIf { it.isNotBlank() }
+                    manifestMandatory = mJson.optBoolean("mandatory", false)
                     if (apkUrl.isBlank()) {
                         apkUrl = mJson.optString("apkUrl", "")
                     }
@@ -437,7 +448,57 @@ class AppUpdateManager(
             apkDownloadUrl = apkUrl,
             releasePageUrl = releasePageUrl,
             apkSizeBytes = apkSize,
-            publishedAt = publishedAt
+            publishedAt = publishedAt,
+            isMandatory = manifestMandatory
+        )
+    }
+
+    private fun fetchDirectManifest(manifestUrl: String): ReleaseUpdateInfo? {
+        val conn = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 10000
+            instanceFollowRedirects = true
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "FM-Music-Android/${BuildConfig.VERSION_NAME}")
+        }
+        conn.connect()
+
+        if (conn.responseCode == 404) return null
+        if (conn.responseCode !in 200..299) {
+            throw IllegalStateException("Update server returned HTTP ${conn.responseCode}")
+        }
+
+        val mJson = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+        val rawApkUrl = mJson.optString("apkUrl", "").trim()
+        if (rawApkUrl.isBlank()) return null
+
+        val resolvedApkUrl = if (rawApkUrl.startsWith("http://") || rawApkUrl.startsWith("https://")) {
+            rawApkUrl
+        } else {
+            URL(URL(manifestUrl), rawApkUrl).toString()
+        }
+
+        val versionName = mJson.optString("versionName", "1.0.0").removePrefix("v").removePrefix("V")
+        val versionCode = if (mJson.has("versionCode")) mJson.optInt("versionCode") else null
+        val tagName = mJson.optString("tagName", "v$versionName").ifBlank { "v$versionName" }
+        val releaseNotes = mJson.optString("releaseNotes", "").ifBlank {
+            "A newer FM Music Android update is ready to install."
+        }
+        val sizeBytes = mJson.optLong("sizeBytes", 0L)
+        val publishedAt = mJson.optString("publishedAt", "")
+        val isMandatory = mJson.optBoolean("mandatory", false)
+
+        return ReleaseUpdateInfo(
+            tagName = tagName,
+            versionName = versionName,
+            versionCode = versionCode,
+            releaseTitle = "FM Music $tagName",
+            releaseNotes = releaseNotes,
+            apkDownloadUrl = resolvedApkUrl,
+            releasePageUrl = manifestUrl,
+            apkSizeBytes = sizeBytes,
+            publishedAt = publishedAt,
+            isMandatory = isMandatory
         )
     }
 
@@ -446,8 +507,15 @@ class AppUpdateManager(
         private const val KEY_GITHUB_REPO = "github_repo_slug"
         private const val KEY_SKIPPED_TAG = "skipped_update_tag"
 
+        fun isDirectManifestUrl(raw: String): Boolean {
+            val t = raw.trim().lowercase()
+            return t.startsWith("https://") && !t.startsWith("https://github.com/")
+        }
+
         fun sanitizeRepoSlug(raw: String): String {
-            var s = raw.trim()
+            val trimmed = raw.trim()
+            if (isDirectManifestUrl(trimmed)) return trimmed
+            val s = trimmed
                 .removePrefix("https://github.com/")
                 .removePrefix("http://github.com/")
                 .removePrefix("github.com/")

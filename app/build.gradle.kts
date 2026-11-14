@@ -9,6 +9,7 @@ plugins {
 val appVersionCode = (project.findProperty("FM_VERSION_CODE")?.toString()?.toIntOrNull()) ?: 1
 val appVersionName = (project.findProperty("FM_VERSION_NAME")?.toString()?.takeIf { it.isNotBlank() }) ?: "1.0.0"
 val githubRepo = (project.findProperty("FM_GITHUB_REPO")?.toString()?.takeIf { it.isNotBlank() }) ?: ""
+val updateManifestUrl = (project.findProperty("FM_UPDATE_MANIFEST_URL")?.toString()?.takeIf { it.isNotBlank() }) ?: ""
 
 android {
     namespace = "com.fmmusic.client"
@@ -24,6 +25,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GITHUB_REPO", "\"${githubRepo.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "UPDATE_MANIFEST_URL", "\"${updateManifestUrl.replace("\"", "\\\"")}\"")
     }
 
     signingConfigs {

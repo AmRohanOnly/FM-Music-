@@ -2861,7 +2861,9 @@ export default function App() {
       {showUpdatePromptModal && updateCheckResult && (
         <div
           className="fixed inset-0 bg-black/65 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setShowUpdatePromptModal(false)}
+          onClick={() => {
+            if (!updateCheckResult.mandatory) setShowUpdatePromptModal(false);
+          }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -2873,7 +2875,9 @@ export default function App() {
                   <Smartphone className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold tracking-tight">New Update Available</h3>
+                  <h3 className="text-lg font-bold tracking-tight">
+                    {updateCheckResult.mandatory ? 'Required Update Available' : 'New Update Available'}
+                  </h3>
                   <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 font-mono">
                     v{updateCheckResult.currentVersion} → v{updateCheckResult.latestVersion}
                     {updateCheckResult.sizeBytes > 0
@@ -2882,13 +2886,15 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowUpdatePromptModal(false)}
-                className="w-10 h-10 rounded-full liquid-glass-button flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer shrink-0"
-                aria-label="Close update prompt"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              {!updateCheckResult.mandatory && (
+                <button
+                  onClick={() => setShowUpdatePromptModal(false)}
+                  className="w-10 h-10 rounded-full liquid-glass-button flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer shrink-0"
+                  aria-label="Close update prompt"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             <div className="p-3.5 rounded-2xl bg-[var(--fm-input-bg)] border border-[var(--fm-glass-border)] max-h-48 overflow-y-auto">
@@ -2921,41 +2927,45 @@ export default function App() {
                   className="min-h-12 w-full px-4 rounded-2xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-sm flex items-center justify-center gap-2 shadow-md"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>Open GitHub Release</span>
+                  <span>Open Release</span>
                 </a>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
-                <a
-                  href={updateCheckResult.packagesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold flex items-center justify-center gap-1.5"
-                >
-                  <Package className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
-                  <span>GitHub Packages</span>
-                </a>
+              {!updateCheckResult.mandatory && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <a
+                      href={updateCheckResult.packagesUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold flex items-center justify-center gap-1.5"
+                    >
+                      <Package className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
+                      <span>GitHub Packages</span>
+                    </a>
 
-                <button
-                  onClick={() => {
-                    if (updateCheckResult.tagName) {
-                      saveSkippedReleaseTag(updateCheckResult.tagName);
-                    }
-                    setShowUpdatePromptModal(false);
-                    showToast(`Skipped v${updateCheckResult.latestVersion}`);
-                  }}
-                  className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
-                >
-                  Skip Version
-                </button>
-              </div>
+                    <button
+                      onClick={() => {
+                        if (updateCheckResult.tagName) {
+                          saveSkippedReleaseTag(updateCheckResult.tagName);
+                        }
+                        setShowUpdatePromptModal(false);
+                        showToast(`Skipped v${updateCheckResult.latestVersion}`);
+                      }}
+                      className="min-h-11 px-3 rounded-xl liquid-glass-button text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
+                    >
+                      Skip Version
+                    </button>
+                  </div>
 
-              <button
-                onClick={() => setShowUpdatePromptModal(false)}
-                className="min-h-10 w-full text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
-              >
-                Remind Me Later
-              </button>
+                  <button
+                    onClick={() => setShowUpdatePromptModal(false)}
+                    className="min-h-10 w-full text-xs font-semibold text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
+                  >
+                    Remind Me Later
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

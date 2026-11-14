@@ -661,23 +661,52 @@ async function startServer() {
     return res.sendFile(apkPath, { dotfiles: 'allow' });
   });
 
-  // 7. GitHub Releases & Packages Auto-Update Check Endpoint
+  // 6b. Self-Hosted Android APK Update Manifest Feed
+  app.get('/api/update-manifest.json', (req, res) => {
+    const manifestCandidates = [
+      path.join(__dirname, 'dist-apk', 'update-manifest.json'),
+      path.join(__dirname, '.build-outputs', 'update-manifest.json'),
+    ];
+    const existingManifest = manifestCandidates.find((p) => fs.existsSync(p));
+    if (existingManifest) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(existingManifest, 'utf8'));
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.json(parsed);
+      } catch {
+        // fallback below
+      }
+    }
+
+    const apkCandidates = [
+      path.join(__dirname, 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      path.join(__dirname, '.build-outputs', 'app-debug.apk'),
+      path.join(__dirname, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+    ];
+    const apkPath = apkCandidates.find((p) => fs.existsSync(p));
+    const stat = apkPath ? fs.statSync(apkPath) : null;
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host = req.get('host') || 'localhost:3000';
+
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.json({
+      appName: 'FM Music',
+      packageId: 'com.fmmusic.client',
+      versionCode: 1,
+      versionName: '1.0.0',
+      tagName: 'v1.0.0',
+      apkUrl: `${proto}://${host}/api/download-apk`,
+      sizeBytes: stat ? stat.size : 0,
+      publishedAt: stat ? stat.mtime.toISOString() : new Date().toISOString(),
+      releaseNotes: 'FM Music Android release build.',
+      mandatory: false,
+    });
+  });
+
+  // 7. GitHub Releases / Packages & Direct Manifest Auto-Update Check Endpoint
   app.get('/api/app-update', async (req, res) => {
     const rawRepo = String(req.query.repo || '').trim();
     const currentVersion = String(req.query.currentVersion || '1.0.0').trim() || '1.0.0';
-
-    const cleanRepo = rawRepo
-      .replace(/^https?:\/\/github\.com\//i, '')
-      .replace(/^github\.com\//i, '')
-      .replace(/\.git$/i, '')
-      .replace(/^\/+|\/+$/g, '');
-
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cleanRepo)) {
-      return res.status(400).json({ error: 'Invalid GitHub repository format. Expected owner/repo.' });
-    }
-
-    const packagesUrl = `https://github.com/${cleanRepo}?tab=packages`;
-    const fallbackReleasePage = `https://github.com/${cleanRepo}/releases`;
 
     const compareVersions = (remote: string, current: string): number => {
       const parse = (v: string) =>
@@ -701,6 +730,55 @@ async function startServer() {
       }
       return 0;
     };
+
+    // Support direct https://.../update-manifest.json self-hosted feed URLs
+    const lowerRaw = rawRepo.toLowerCase();
+    if (lowerRaw.startsWith('https://') && !lowerRaw.startsWith('https://github.com/')) {
+      try {
+        const mRes = await fetch(rawRepo, {
+          headers: { Accept: 'application/json', 'User-Agent': 'FM-Music-Updater/1.0' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!mRes.ok) {
+          return res.status(502).json({ error: `Manifest URL returned HTTP ${mRes.status}` });
+        }
+        const mJson = await mRes.json();
+        const latestVersion = String(mJson?.versionName || currentVersion).replace(/^v/i, '').trim();
+        const tagName = String(mJson?.tagName || `v${latestVersion}`);
+        return res.json({
+          repo: rawRepo,
+          currentVersion,
+          latestVersion,
+          tagName,
+          versionCode: typeof mJson?.versionCode === 'number' ? mJson.versionCode : null,
+          updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
+          releaseTitle: `FM Music ${tagName}`,
+          releaseNotes: String(mJson?.releaseNotes || '').trim(),
+          apkDownloadUrl: mJson?.apkUrl || null,
+          releasePageUrl: rawRepo,
+          packagesUrl: rawRepo,
+          sizeBytes: Number(mJson?.sizeBytes || 0),
+          publishedAt: String(mJson?.publishedAt || ''),
+          mandatory: Boolean(mJson?.mandatory),
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch update manifest URL';
+        return res.status(502).json({ error: message });
+      }
+    }
+
+    const cleanRepo = rawRepo
+      .replace(/^https?:\/\/github\.com\//i, '')
+      .replace(/^github\.com\//i, '')
+      .replace(/\.git$/i, '')
+      .replace(/^\/+|\/+$/g, '');
+
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cleanRepo)) {
+      return res.status(400).json({ error: 'Enter owner/repo or a direct https://.../update-manifest.json URL.' });
+    }
+
+    const packagesUrl = `https://github.com/${cleanRepo}?tab=packages`;
+    const fallbackReleasePage = `https://github.com/${cleanRepo}/releases`;
 
     try {
       const ghRes = await fetch(`https://api.github.com/repos/${cleanRepo}/releases/latest`, {
@@ -726,6 +804,7 @@ async function startServer() {
           packagesUrl,
           sizeBytes: 0,
           publishedAt: '',
+          mandatory: false,
         });
       }
 
@@ -755,6 +834,7 @@ async function startServer() {
         apkUrl?: string;
         sizeBytes?: number;
         publishedAt?: string;
+        mandatory?: boolean;
       } | null = null;
 
       if (manifestAsset?.browser_download_url) {
@@ -798,6 +878,7 @@ async function startServer() {
         packagesUrl,
         sizeBytes,
         publishedAt,
+        mandatory: Boolean(manifestData?.mandatory),
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to query GitHub Releases';

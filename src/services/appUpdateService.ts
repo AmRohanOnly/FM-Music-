@@ -17,12 +17,20 @@ export interface AppUpdateCheckResult {
   packagesUrl: string;
   sizeBytes: number;
   publishedAt: string;
+  mandatory?: boolean;
   error?: string;
 }
 
+export function isDirectManifestUrl(raw: string): boolean {
+  const lower = raw.trim().toLowerCase();
+  return lower.startsWith('https://') && !lower.startsWith('https://github.com/');
+}
+
 export function sanitizeGithubRepo(raw: string): string {
-  const cleaned = raw
-    .trim()
+  const trimmed = raw.trim();
+  if (isDirectManifestUrl(trimmed)) return trimmed;
+
+  const cleaned = trimmed
     .replace(/^https?:\/\/github\.com\//i, '')
     .replace(/^github\.com\//i, '')
     .replace(/\.git$/i, '')

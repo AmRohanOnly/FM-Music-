@@ -17,6 +17,11 @@ on:
         description: 'Release notes shown in the in-app update prompt'
         required: false
         default: 'Performance improvements, streaming stability fixes, and player enhancements.'
+      force_update:
+        description: 'Require older APKs to install this update (hide Skip/Later)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -129,6 +134,11 @@ jobs:
             NOTES="FM Music v${VERSION_NAME} (Build ${VERSION_CODE}) — includes latest streaming, equalizer, and UI improvements."
           fi
 
+          FORCE_UPDATE="${{ github.event.inputs.force_update || 'false' }}"
+          if [[ "$FORCE_UPDATE" != "true" ]]; then
+            FORCE_UPDATE="false"
+          fi
+
           jq -n \
             --arg appName "FM Music" \
             --arg packageId "com.fmmusic.client" \
@@ -140,6 +150,7 @@ jobs:
             --argjson sizeBytes "$SIZE_BYTES" \
             --arg publishedAt "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
             --arg releaseNotes "$NOTES" \
+            --argjson mandatory "$FORCE_UPDATE" \
             '{
               appName: $appName,
               packageId: $packageId,
@@ -150,7 +161,8 @@ jobs:
               sha256: $sha256,
               sizeBytes: $sizeBytes,
               publishedAt: $publishedAt,
-              releaseNotes: $releaseNotes
+              releaseNotes: $releaseNotes,
+              mandatory: $mandatory
             }' > dist-apk/update-manifest.json
 
           echo "apk_path=${VERSIONED_APK}" >> "$GITHUB_OUTPUT"

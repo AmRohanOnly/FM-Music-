@@ -1594,12 +1594,12 @@ private fun NewUpdateAvailableDialog(
     onLater: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = { if (!state.isDownloading) onLater() },
+        onDismissRequest = { if (!state.isDownloading && !release.isMandatory) onLater() },
         containerColor = Panel,
         title = {
             Column {
                 Text(
-                    "New Update Available",
+                    if (release.isMandatory) "Required Update Available" else "New Update Available",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 19.sp
@@ -1682,17 +1682,19 @@ private fun NewUpdateAvailableDialog(
                     ) {
                         Text("Browser", color = Accent, fontSize = 12.sp)
                     }
-                    TextButton(
-                        onClick = onSkipVersion,
-                        enabled = !state.isDownloading
-                    ) {
-                        Text("Skip", color = SoftText, fontSize = 12.sp)
-                    }
-                    TextButton(
-                        onClick = onLater,
-                        enabled = !state.isDownloading
-                    ) {
-                        Text("Later", color = SoftText, fontSize = 12.sp)
+                    if (!release.isMandatory) {
+                        TextButton(
+                            onClick = onSkipVersion,
+                            enabled = !state.isDownloading
+                        ) {
+                            Text("Skip", color = SoftText, fontSize = 12.sp)
+                        }
+                        TextButton(
+                            onClick = onLater,
+                            enabled = !state.isDownloading
+                        ) {
+                            Text("Later", color = SoftText, fontSize = 12.sp)
+                        }
                     }
                 }
             }
@@ -1731,7 +1733,7 @@ private fun AppUpdateSettingsDialog(
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "GitHub Repository (owner/repo):",
+                    "Update Source (GitHub owner/repo or manifest URL):",
                     color = SoftText,
                     fontSize = 12.sp
                 )
@@ -1739,7 +1741,7 @@ private fun AppUpdateSettingsDialog(
                 OutlinedTextField(
                     value = repoInput,
                     onValueChange = { repoInput = it },
-                    placeholder = { Text("username/fm-music", color = Color(0xFF6B6B7A)) },
+                    placeholder = { Text("user/fm-music or https://.../update-manifest.json", color = Color(0xFF6B6B7A)) },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -1778,7 +1780,7 @@ private fun AppUpdateSettingsDialog(
                     }
                 }
 
-                if (state.githubRepo.isNotBlank()) {
+                if (state.githubRepo.isNotBlank() && !state.githubRepo.startsWith("https://")) {
                     Spacer(Modifier.height(6.dp))
                     TextButton(
                         onClick = onOpenPackagesPage,

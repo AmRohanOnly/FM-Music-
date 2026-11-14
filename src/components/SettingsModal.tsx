@@ -33,6 +33,7 @@ import {
   AppUpdateCheckResult,
   CURRENT_APP_VERSION,
   formatApkSize,
+  isDirectManifestUrl,
   sanitizeGithubRepo,
 } from '../services/appUpdateService';
 import { EqualizerPanel } from './EqualizerPanel';
@@ -127,6 +128,11 @@ export function SettingsModal({
   const [copiedJson, setCopiedJson] = useState(false);
   const [customSleepMin, setCustomSleepMin] = useState('');
   const [repoInput, setRepoInput] = useState(githubRepo);
+  const [nextVerName, setNextVerName] = useState('1.0.1');
+  const [nextVerCode, setNextVerCode] = useState('2');
+  const [nextApkUrl, setNextApkUrl] = useState('');
+  const [nextNotes, setNextNotes] = useState('Streaming stability fixes, UI improvements, and bug fixes.');
+  const [nextMandatory, setNextMandatory] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1018,7 +1024,7 @@ export function SettingsModal({
                     <div>
                       <h3 className="text-sm font-bold">FM Music for Android (.apk)</h3>
                       <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-relaxed">
-                        Native Kotlin + Jetpack Compose + Media3 ExoPlayer app with built-in GitHub auto-update alerts.
+                        Build in the cloud with GitHub Actions or locally with <span className="font-mono text-[var(--fm-text)]">scripts/build-release-apk.sh</span> / Android Studio.
                       </p>
                     </div>
                   </div>
@@ -1038,7 +1044,7 @@ export function SettingsModal({
                     <span>Download Android APK</span>
                   </a>
 
-                  {sanitizeGithubRepo(repoInput) && (
+                  {sanitizeGithubRepo(repoInput) && !isDirectManifestUrl(repoInput) && (
                     <a
                       href={`https://github.com/${sanitizeGithubRepo(repoInput)}?tab=packages`}
                       target="_blank"
@@ -1053,12 +1059,12 @@ export function SettingsModal({
                 </div>
               </div>
 
-              {/* GitHub Packages & Releases Auto-Update Config */}
+              {/* Update Source Checker (GitHub Repo OR Custom Manifest URL) */}
               <div className="liquid-glass rounded-2xl p-4 space-y-3">
                 <div>
-                  <h4 className="text-sm font-bold">GitHub Auto-Update & Packages Repository</h4>
+                  <h4 className="text-sm font-bold">Update Feed (GitHub or Self-Hosted URL)</h4>
                   <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-relaxed">
-                    Every push or release builds a signed APK via GitHub Actions, publishes it to GitHub Packages, and notifies older APKs when a newer version is available.
+                    Connect a GitHub repository (<span className="font-mono text-[var(--fm-text)]">owner/repo</span>) or any <span className="font-mono text-[var(--fm-text)]">https://.../update-manifest.json</span> URL.
                   </p>
                 </div>
 
@@ -1067,7 +1073,7 @@ export function SettingsModal({
                     e.preventDefault();
                     const cleaned = sanitizeGithubRepo(repoInput);
                     if (!cleaned) {
-                      onNotify('Enter repository as owner/repo (e.g. alex/fm-music)');
+                      onNotify('Enter owner/repo or https://.../update-manifest.json');
                       return;
                     }
                     setRepoInput(cleaned);
@@ -1080,9 +1086,9 @@ export function SettingsModal({
                     type="text"
                     value={repoInput}
                     onChange={(e) => setRepoInput(e.target.value)}
-                    placeholder="owner/repo (e.g. yourname/fm-music)"
+                    placeholder="owner/repo or https://.../update-manifest.json"
                     className="flex-1 h-11 px-3.5 rounded-xl liquid-glass-input text-xs sm:text-sm text-[var(--fm-text)] placeholder-[var(--fm-text-muted)]/60 focus:outline-none focus:border-[var(--fm-accent)] font-mono"
-                    aria-label="GitHub repository owner and name"
+                    aria-label="GitHub repository or manifest URL"
                   />
                   <button
                     type="submit"
@@ -1120,7 +1126,7 @@ export function SettingsModal({
 
                     {!updateCheckResult.tagName && (
                       <p className="text-[var(--fm-text-muted)] leading-relaxed">
-                        No GitHub Releases published yet. Push your code to GitHub to run the Android APK workflow automatically.
+                        No releases published yet. Push code or tag <span className="font-mono text-[var(--fm-text)]">v1.0.1</span> to publish your first APK automatically.
                       </p>
                     )}
 
@@ -1147,15 +1153,148 @@ export function SettingsModal({
                     )}
                   </div>
                 )}
+              </div>
 
-                <div className="pt-2 border-t border-[var(--fm-glass-border)] space-y-1 text-xs text-[var(--fm-text-muted)]">
-                  <p className="font-semibold text-[var(--fm-text)]">How future updates prompt older APKs:</p>
-                  <p>
-                    1. Workflow <span className="font-mono text-[var(--fm-text)]">.github/workflows/android-apk-release.yml</span> builds the release APK, uploads it to GitHub Packages (<span className="font-mono text-[var(--fm-text)]">com.fmmusic:fm-music-android</span>), and attaches <span className="font-mono text-[var(--fm-text)]">update-manifest.json</span> to GitHub Releases.
+              {/* Future Update Publisher & Manifest Generator */}
+              <div className="liquid-glass rounded-2xl p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold">Publish Future Updates (Release Manifest Builder)</h4>
+                  <p className="text-xs text-[var(--fm-text-muted)] mt-0.5 leading-relaxed">
+                    Ship updates either automatically via <span className="font-mono text-[var(--fm-text)]">git tag v{nextVerName} && git push origin v{nextVerName}</span> or by hosting this <span className="font-mono text-[var(--fm-text)]">update-manifest.json</span> + APK anywhere.
                   </p>
-                  <p>
-                    2. Older installed APKs check the latest release on startup and display a &ldquo;New Update Available&rdquo; dialog with one-tap APK download &amp; install.
-                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--fm-text-muted)] block mb-1">
+                      Next Version Name
+                    </label>
+                    <input
+                      type="text"
+                      value={nextVerName}
+                      onChange={(e) => setNextVerName(e.target.value)}
+                      placeholder="1.0.1"
+                      className="w-full h-10 px-3 rounded-xl liquid-glass-input text-xs font-mono text-[var(--fm-text)] focus:outline-none focus:border-[var(--fm-accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-[var(--fm-text-muted)] block mb-1">
+                      Version Code (Integer)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={nextVerCode}
+                      onChange={(e) => setNextVerCode(e.target.value)}
+                      placeholder="2"
+                      className="w-full h-10 px-3 rounded-xl liquid-glass-input text-xs font-mono text-[var(--fm-text)] focus:outline-none focus:border-[var(--fm-accent)]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-[var(--fm-text-muted)] block mb-1">
+                    APK Download URL (optional override)
+                  </label>
+                  <input
+                    type="url"
+                    value={nextApkUrl}
+                    onChange={(e) => setNextApkUrl(e.target.value)}
+                    placeholder={
+                      sanitizeGithubRepo(repoInput) && !isDirectManifestUrl(repoInput)
+                        ? `https://github.com/${sanitizeGithubRepo(repoInput)}/releases/download/v${nextVerName}/FM-Music-v${nextVerName}.apk`
+                        : 'https://your-host.com/FM-Music-v1.0.1.apk'
+                    }
+                    className="w-full h-10 px-3 rounded-xl liquid-glass-input text-xs font-mono text-[var(--fm-text)] focus:outline-none focus:border-[var(--fm-accent)]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-[var(--fm-text-muted)] block mb-1">
+                    Release Notes (shown to users on older APKs)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={nextNotes}
+                    onChange={(e) => setNextNotes(e.target.value)}
+                    className="w-full p-2.5 rounded-xl liquid-glass-input text-xs text-[var(--fm-text)] focus:outline-none focus:border-[var(--fm-accent)]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-0.5">
+                  <div>
+                    <p className="text-xs font-semibold">Mandatory Update (Force Install)</p>
+                    <p className="text-[11px] text-[var(--fm-text-muted)]">
+                      Hides Skip &amp; Later buttons on older APKs
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNextMandatory((v) => !v)}
+                    className={`min-h-9 px-3.5 rounded-full text-xs font-bold cursor-pointer ${
+                      nextMandatory
+                        ? 'bg-[var(--fm-accent)] text-[var(--fm-accent-fg)]'
+                        : 'liquid-glass-button text-[var(--fm-text-muted)]'
+                    }`}
+                  >
+                    {nextMandatory ? 'Required' : 'Optional'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanRepo = sanitizeGithubRepo(repoInput);
+                      const fallbackUrl =
+                        cleanRepo && !isDirectManifestUrl(cleanRepo)
+                          ? `https://github.com/${cleanRepo}/releases/download/v${nextVerName.trim() || '1.0.1'}/FM-Music-v${nextVerName.trim() || '1.0.1'}.apk`
+                          : '';
+                      const manifestObj = {
+                        appName: 'FM Music',
+                        packageId: 'com.fmmusic.client',
+                        versionCode: parseInt(nextVerCode, 10) || 2,
+                        versionName: nextVerName.trim() || '1.0.1',
+                        tagName: `v${(nextVerName.trim() || '1.0.1').replace(/^v/i, '')}`,
+                        apkUrl: nextApkUrl.trim() || fallbackUrl,
+                        publishedAt: new Date().toISOString(),
+                        releaseNotes: nextNotes.trim(),
+                        mandatory: nextMandatory,
+                      };
+                      const blob = new Blob([JSON.stringify(manifestObj, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'update-manifest.json';
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      onNotify('Downloaded update-manifest.json');
+                    }}
+                    className="min-h-10 px-3.5 rounded-xl bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download update-manifest.json</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const cleanRepo = sanitizeGithubRepo(repoInput);
+                      const ver = (nextVerName.trim() || '1.0.1').replace(/^v/i, '');
+                      const code = parseInt(nextVerCode, 10) || 2;
+                      const cmd = `./scripts/build-release-apk.sh "${ver}" "${code}" "${cleanRepo}" "${nextNotes.replace(/"/g, '\\"')}" "" "${nextMandatory}"`;
+                      try {
+                        await navigator.clipboard.writeText(cmd);
+                        onNotify('Copied local APK build command');
+                      } catch {
+                        onNotify('Copy unavailable in this browser');
+                      }
+                    }}
+                    className="min-h-10 px-3.5 rounded-xl liquid-glass-button text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
+                    <span>Copy Local Build Command</span>
+                  </button>
                 </div>
               </div>
             </div>

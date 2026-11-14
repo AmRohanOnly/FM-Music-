@@ -113,7 +113,7 @@ class MusicApplication : Application() {
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L) gzip")
+                connection.setRequestProperty("User-Agent", "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
                 connection.connect()
 
                 if (connection.responseCode in 200..299) {

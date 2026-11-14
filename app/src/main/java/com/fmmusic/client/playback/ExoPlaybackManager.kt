@@ -438,6 +438,6 @@ class ExoPlaybackManager(context: Context) {
 
     companion object {
         private const val DEFAULT_USER_AGENT =
-            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L) gzip"
+            "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
     }
 }

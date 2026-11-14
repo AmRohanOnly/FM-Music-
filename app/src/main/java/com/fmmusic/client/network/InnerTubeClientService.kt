@@ -351,18 +351,18 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
         val clientProfiles = listOf(
             ClientProfile(
-                clientName = "ANDROID_VR",
-                clientVersion = "1.65.10",
-                clientId = "28",
-                userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-                extraClientFields = mapOf("deviceMake" to "Oculus", "deviceModel" to "Quest 3", "osName" to "Android", "osVersion" to "12L")
-            ),
-            ClientProfile(
                 clientName = "IOS",
                 clientVersion = "20.10.4",
                 clientId = "5",
                 userAgent = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
                 extraClientFields = mapOf("deviceMake" to "Apple", "deviceModel" to "iPhone16,2", "osName" to "iPhone", "osVersion" to "18.3.2.22D82")
+            ),
+            ClientProfile(
+                clientName = "ANDROID_VR",
+                clientVersion = "1.65.10",
+                clientId = "28",
+                userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+                extraClientFields = mapOf("deviceMake" to "Oculus", "deviceModel" to "Quest 3", "osName" to "Android", "osVersion" to "12L")
             ),
             ClientProfile(
                 clientName = "ANDROID_MUSIC",

@@ -6,7 +6,7 @@ set -euo pipefail
 #   ./scripts/build-release-apk.sh 1.0.1 2 owner/fm-music "Bug fixes and improvements"
 #
 # Requirements on local machine:
-#   - JDK 17+
+#   - JDK 21+
 #   - Android SDK (ANDROID_HOME set)
 #   - Gradle 8.13 (or ./gradlew)
 

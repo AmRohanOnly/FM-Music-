@@ -1,3 +1,5 @@
+import java.io.File
+import java.util.Base64
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -28,25 +30,57 @@ android {
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"${updateManifestUrl.replace("\"", "\\\"")}\"")
     }
 
-    signingConfigs {
-        named("debug") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+    val envKeystorePath = System.getenv("FM_SIGN_KEYSTORE")?.trim()
+    val resolvedEnvKeystore: File? = envKeystorePath
+        ?.takeIf { it.isNotBlank() }
+        ?.let { path -> File(path).let { if (it.isAbsolute) it else file("${rootDir}/$path") } }
+        ?.takeIf { it.exists() }
+
+    val resolvedDebugKeystore: File? = run {
+        val rootDebug = file("${rootDir}/debug.keystore")
+        val base64Debug = file("${rootDir}/debug.keystore.base64")
+        val sdkDebug = File(System.getProperty("user.home"), ".android/debug.keystore")
+        when {
+            rootDebug.exists() -> rootDebug
+            base64Debug.exists() -> {
+                val outFile = layout.buildDirectory.file("signing/debug.keystore").get().asFile
+                outFile.parentFile?.mkdirs()
+                outFile.writeBytes(Base64.getMimeDecoder().decode(base64Debug.readText()))
+                outFile
+            }
+            sdkDebug.exists() -> sdkDebug
+            else -> null
         }
-        create("release") {
-            val envKeystore = System.getenv("FM_SIGN_KEYSTORE")
-            if (!envKeystore.isNullOrBlank() && file("${rootDir}/$envKeystore").exists()) {
-                storeFile = file("${rootDir}/$envKeystore")
-                storePassword = System.getenv("FM_SIGN_STORE_PASS") ?: "android"
-                keyAlias = System.getenv("FM_SIGN_KEY_ALIAS") ?: "androiddebugkey"
-                keyPassword = System.getenv("FM_SIGN_KEY_PASS") ?: "android"
-            } else {
-                storeFile = file("${rootDir}/debug.keystore")
+    }
+
+    signingConfigs {
+        if (resolvedDebugKeystore != null) {
+            named("debug") {
+                storeFile = resolvedDebugKeystore
                 storePassword = "android"
                 keyAlias = "androiddebugkey"
                 keyPassword = "android"
+            }
+        }
+        create("release") {
+            val releaseKeystore = resolvedEnvKeystore ?: resolvedDebugKeystore
+            if (releaseKeystore != null) {
+                storeFile = releaseKeystore
+                storePassword = if (resolvedEnvKeystore != null) {
+                    System.getenv("FM_SIGN_STORE_PASS") ?: "android"
+                } else {
+                    "android"
+                }
+                keyAlias = if (resolvedEnvKeystore != null) {
+                    System.getenv("FM_SIGN_KEY_ALIAS") ?: "androiddebugkey"
+                } else {
+                    "androiddebugkey"
+                }
+                keyPassword = if (resolvedEnvKeystore != null) {
+                    System.getenv("FM_SIGN_KEY_PASS") ?: "android"
+                } else {
+                    "android"
+                }
             }
         }
     }
@@ -57,7 +91,11 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (resolvedEnvKeystore != null || resolvedDebugKeystore != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

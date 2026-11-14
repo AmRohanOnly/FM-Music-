@@ -3,8 +3,6 @@ package com.fmmusic.client.network
 import com.fmmusic.client.data.MusicCatalogData
 import com.fmmusic.client.model.MusicTrack
 import com.metrolist.innertubex.InnerTube
-import com.metrolist.innertubex.extraction.AudioQuality
-import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.models.YouTubeClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -89,7 +87,6 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     }
 
     val innerTube = InnerTube(httpClient)
-    private val streamExtractor by lazy { InnerTubeExtractor(innerTube = innerTube) }
 
     private val mutableSessionState = MutableStateFlow(VisitorSessionState())
     val sessionState = mutableSessionState.asStateFlow()
@@ -326,9 +323,9 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     /**
      * Resolves a direct playable audio stream URL + required HTTP headers for ExoPlayer.
      *
-     * Stage 1: InnerTubeX's InnerTubeExtractor (client fallback + QuackJS cipher/n-param decryption).
-     * Stage 2: Direct InnerTube player API profiles (ANDROID_VR, IOS, ANDROID_MUSIC) with playability check.
-     * Stage 3: Piped & Invidious public stream extractors.
+     * Stage 1: Direct InnerTube player API profiles (ANDROID_VR, IOS, ANDROID_MUSIC) with playability check.
+     * Stage 2: Piped public stream extractors.
+     * Stage 3: Invidious public stream extractors.
      */
     suspend fun extractPlayerStream(
         videoId: String,
@@ -341,35 +338,9 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
         }
         streamCache.remove(cleanId)
 
-        // Stage 1: InnerTubeX built-in StreamExtractor (handles cipher + n-param + client headers)
-        try {
-            val extracted = withTimeoutOrNull(11_000L) {
-                streamExtractor.extract(
-                    videoId = cleanId,
-                    audioQuality = AudioQuality.AUTO
-                )
-            }
-            if (extracted != null && extracted.audioUrl.startsWith("http")) {
-                val info = PlayerStreamInfo(
-                    videoId = cleanId,
-                    streamUrl = extracted.audioUrl,
-                    mimeType = extracted.mimeType.ifBlank { "audio/mp4" },
-                    bitrate = extracted.bitrate ?: 128000,
-                    itag = extracted.itag,
-                    source = "InnerTube (${extracted.clientName})",
-                    isSigned = true,
-                    headers = extracted.headers
-                )
-                streamCache[cleanId] = info
-                return@withContext info
-            }
-        } catch (_: Exception) {
-            // Continue to direct InnerTube clients
-        }
-
         val visitorToken = mutableVisitorData.value ?: mutableSessionState.value.visitorData
 
-        // Stage 2: Direct InnerTube player clients that issue unencrypted direct audio URLs
+        // Stage 1: Direct InnerTube player clients that issue unencrypted direct audio URLs
         data class ClientProfile(
             val clientName: String,
             val clientVersion: String,
@@ -450,7 +421,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             }
         }
 
-        // Stage 3: Piped API public instances
+        // Stage 2: Piped API public instances
         val pipedUrls = listOf(
             "https://pipedapi.kavin.rocks/streams/$cleanId",
             "https://api.piped.video/streams/$cleanId",
@@ -469,7 +440,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             } catch (_: Exception) {}
         }
 
-        // Stage 4: Invidious public instances
+        // Stage 3: Invidious public instances
         val invidiousUrls = listOf(
             "https://inv.nadeko.net/api/v1/videos/$cleanId",
             "https://invidious.nerdvpn.de/api/v1/videos/$cleanId"

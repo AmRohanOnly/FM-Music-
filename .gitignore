@@ -5,3 +5,7 @@ local.properties
 *.iml
 *.keystore
 *.jks
+.env
+.vscode/
+.antigravity/
+.aistudio/

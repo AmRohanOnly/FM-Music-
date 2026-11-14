@@ -8,7 +8,7 @@ set -euo pipefail
 # Requirements on local machine:
 #   - JDK 21+
 #   - Android SDK (ANDROID_HOME set)
-#   - Gradle 8.13 (or ./gradlew)
+#   - Gradle 8.14.4 (or ./gradlew)
 
 VERSION_NAME="${1:-1.0.1}"
 VERSION_CODE="${2:-2}"
@@ -24,7 +24,7 @@ if [[ -z "$GRADLE_BIN" ]]; then
   elif command -v gradle >/dev/null 2>&1; then
     GRADLE_BIN="gradle"
   else
-    echo "Error: Neither ./gradlew nor 'gradle' found in PATH. Open this folder in Android Studio or install Gradle 8.13." >&2
+    echo "Error: Neither ./gradlew nor 'gradle' found in PATH. Open this folder in Android Studio or install Gradle 8.14.4." >&2
     exit 1
   fi
 fi

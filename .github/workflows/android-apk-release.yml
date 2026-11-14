@@ -47,10 +47,10 @@ jobs:
         with:
           packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
 
-      - name: Set up Gradle 8.13
+      - name: Set up Gradle 8.14.4
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.14.4'
 
       - name: Resolve Version Code & Version Name
         id: meta

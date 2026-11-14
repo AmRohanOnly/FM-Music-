@@ -103,20 +103,17 @@ class MusicApplication : Application() {
         appScope.launch {
             try {
                 val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                val streamUrlToDownload = if (track.streamUrl.startsWith("http") && track.streamUrl.contains("sig=")) {
+                val streamUrlToDownload = if (track.streamUrl.startsWith("http") && track.streamUrl.contains("googlevideo")) {
                     track.streamUrl
                 } else {
-                    try {
-                        innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id }).streamUrl
-                    } catch (_: Exception) {
-                        track.streamUrl.ifBlank { "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3" }
-                    }
+                    innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id }, allowFallback = false).streamUrl
                 }
                 val url = URL(streamUrlToDownload)
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L) gzip")
                 connection.connect()
 
                 if (connection.responseCode in 200..299) {

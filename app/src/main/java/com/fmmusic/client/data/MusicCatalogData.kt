@@ -13,7 +13,7 @@ object MusicCatalogData {
             durationSeconds = 268,
             vibe = "Hindi hits",
             youtubeId = "ElZfdU54Cp8",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/ElZfdU54Cp8/hqdefault.jpg",
             lyrics = listOf(
                 "Mujhko itna bataye koyi",
                 "Kaise tujhse dil na lagaye koyi",
@@ -31,7 +31,7 @@ object MusicCatalogData {
             durationSeconds = 261,
             vibe = "Hindi hits",
             youtubeId = "k4yXQkG2s1E",
-            streamUrl = "https://cdn.freesound.org/previews/682/682055_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/k4yXQkG2s1E/hqdefault.jpg",
             lyrics = listOf(
                 "Tu mera koyi na hoke bhi kuch laage",
                 "Kiya re jo bhi tune kiya re",
@@ -47,7 +47,7 @@ object MusicCatalogData {
             durationSeconds = 230,
             vibe = "Hindi hits",
             youtubeId = "IltsOcwkhvE",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/IltsOcwkhvE/hqdefault.jpg",
             lyrics = listOf(
                 "Teri meri gallan ho gayi mashhur",
                 "Kar na kabhi tu mujhe nazron se door",
@@ -65,7 +65,7 @@ object MusicCatalogData {
             durationSeconds = 233,
             vibe = "New releases",
             youtubeId = "JGwWNGJdvx8",
-            streamUrl = "https://cdn.freesound.org/previews/682/682055_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg",
             lyrics = listOf(
                 "The club isn't the best place to find a lover",
                 "So the bar is where I go",
@@ -81,7 +81,7 @@ object MusicCatalogData {
             durationSeconds = 228,
             vibe = "New releases",
             youtubeId = "kJQP7kiw5Fk",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg",
             lyrics = listOf(
                 "Sí, sabes que ya llevo un rato mirándote",
                 "Tengo que bailar contigo hoy",
@@ -97,8 +97,8 @@ object MusicCatalogData {
             album = "Study Session",
             durationSeconds = 195,
             vibe = "Chill",
-            youtubeId = "5qap5aO4i9A",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3",
+            youtubeId = "lTRiuFIWV54",
+            thumbnailUrl = "https://i.ytimg.com/vi/lTRiuFIWV54/hqdefault.jpg",
             lyrics = listOf(
                 "(Instrumental relaxing lofi melodies and peaceful vinyl crackles)"
             )
@@ -110,8 +110,8 @@ object MusicCatalogData {
             album = "Presence",
             durationSeconds = 237,
             vibe = "Chill",
-            youtubeId = "m7Bc3pLyij0",
-            streamUrl = "https://cdn.freesound.org/previews/682/682055_11861866-lq.mp3"
+            youtubeId = "4fQeaM62mOY",
+            thumbnailUrl = "https://i.ytimg.com/vi/4fQeaM62mOY/hqdefault.jpg"
         ),
 
         // Indie
@@ -122,8 +122,8 @@ object MusicCatalogData {
             album = "I Love You.",
             durationSeconds = 240,
             vibe = "Indie",
-            youtubeId = "4NRXx6U8ABQ",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3",
+            youtubeId = "GCdwKhTtNNw",
+            thumbnailUrl = "https://i.ytimg.com/vi/GCdwKhTtNNw/hqdefault.jpg",
             lyrics = listOf(
                 "All I am is a man, I want the world in my hands",
                 "Cause it's too cold for you here",
@@ -137,8 +137,8 @@ object MusicCatalogData {
             album = "Dream Your Life Away",
             durationSeconds = 204,
             vibe = "Indie",
-            youtubeId = "b7k0a5hYnSI",
-            streamUrl = "https://cdn.freesound.org/previews/682/682055_11861866-lq.mp3"
+            youtubeId = "uJ_1HMAGb4k",
+            thumbnailUrl = "https://i.ytimg.com/vi/uJ_1HMAGb4k/hqdefault.jpg"
         ),
 
         // Focus
@@ -149,8 +149,8 @@ object MusicCatalogData {
             album = "Weightless",
             durationSeconds = 485,
             vibe = "Focus",
-            youtubeId = "WPni755-Krg",
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
+            youtubeId = "UfcAVejslrU",
+            thumbnailUrl = "https://i.ytimg.com/vi/UfcAVejslrU/hqdefault.jpg"
         ),
 
         // Workout
@@ -162,7 +162,7 @@ object MusicCatalogData {
             durationSeconds = 245,
             vibe = "Workout",
             youtubeId = "btPJPFnesV4",
-            streamUrl = "https://cdn.freesound.org/previews/682/682055_11861866-lq.mp3",
+            thumbnailUrl = "https://i.ytimg.com/vi/btPJPFnesV4/hqdefault.jpg",
             lyrics = listOf(
                 "Risin' up, back on the street",
                 "Did my time, took my chances",
@@ -192,7 +192,7 @@ object MusicCatalogData {
                     durationSeconds = 210,
                     vibe = "Top hits",
                     youtubeId = "JGwWNGJdvx8",
-                    streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
+                    thumbnailUrl = "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg"
                 )
             )
         }

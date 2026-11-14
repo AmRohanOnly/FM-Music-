@@ -3,11 +3,19 @@ package com.fmmusic.client.network
 import com.fmmusic.client.data.MusicCatalogData
 import com.fmmusic.client.model.MusicTrack
 import com.metrolist.innertubex.InnerTube
+import com.metrolist.innertubex.extraction.AudioQuality
+import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.models.YouTubeClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,17 +29,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -55,10 +56,15 @@ data class PlayerStreamInfo(
     val itag: Int? = null,
     val expiresInSeconds: Long = 21600L,
     val source: String = "InnerTube Player Endpoint",
-    val isSigned: Boolean = true
+    val isSigned: Boolean = true,
+    val headers: Map<String, String> = emptyMap(),
+    val extractedAtMs: Long = System.currentTimeMillis()
 ) {
     val formatDescription: String
         get() = "$source • ${bitrate / 1000}kbps ${mimeType.substringBefore(';')}"
+
+    val isExpired: Boolean
+        get() = (System.currentTimeMillis() - extractedAtMs) >= ((expiresInSeconds - 120).coerceAtLeast(60) * 1000L)
 }
 
 class InnerTubeClientService(private val scope: CoroutineScope) {
@@ -74,6 +80,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 connectTimeout(6, TimeUnit.SECONDS)
                 readTimeout(8, TimeUnit.SECONDS)
                 callTimeout(10, TimeUnit.SECONDS)
+                followRedirects(true)
             }
         }
         install(ContentNegotiation) {
@@ -82,6 +89,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     }
 
     val innerTube = InnerTube(httpClient)
+    private val streamExtractor by lazy { InnerTubeExtractor(innerTube = innerTube) }
 
     private val mutableSessionState = MutableStateFlow(VisitorSessionState())
     val sessionState = mutableSessionState.asStateFlow()
@@ -92,7 +100,6 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     private var visitorFetchJob: Job? = null
 
     init {
-        // Step 1: Initialize an unauthenticated visitor session for InnerTube
         initializeVisitorSession()
     }
 
@@ -100,13 +107,8 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
         startVisitorSession()
     }
 
-    /**
-     * Initializes the InnerTube client and starts a visitor session for public music browsing.
-     * Generates or fetches visitorData (X-Goog-Visitor-Id) and configures the unauthenticated session.
-     */
     fun startVisitorSession(): VisitorSessionState {
         val fallbackToken = "Cgt" + UUID.randomUUID().toString().replace("-", "").take(11).uppercase()
-        var token: String = fallbackToken
         try {
             innerTube.visitorData = fallbackToken
             mutableVisitorData.value = fallbackToken
@@ -114,7 +116,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
         val newState = VisitorSessionState(
             isInitialized = true,
-            visitorData = token,
+            visitorData = fallbackToken,
             clientName = "WEB_REMIX",
             clientVersion = "1.20240101.01.00",
             isPublicBrowsingActive = true,
@@ -126,7 +128,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
         visitorFetchJob?.cancel()
         visitorFetchJob = scope.launch(Dispatchers.IO) {
             try {
-                val freshToken = withTimeoutOrNull(4000L) {
+                val freshToken = withTimeoutOrNull(4500L) {
                     innerTube.fetchFreshVisitorData()
                 }
                 if (!freshToken.isNullOrBlank()) {
@@ -138,44 +140,38 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                     )
                 }
             } catch (_: Exception) {
-                // Continue with the initialized fallback token
+                // Keep initialized fallback visitorData
             }
         }
 
         return newState
     }
 
-    /**
-     * Search YouTube Music catalog using InnerTube unauthenticated session
-     * and map retrieved metadata directly into the app's MusicTrack UI models.
-     */
     suspend fun searchTracks(query: String): List<MusicTrack> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return@withContext emptyList()
 
         try {
-            val response = innerTube.search(
-                client = YouTubeClient.WEB_REMIX,
-                query = trimmed
-            )
-            val responseText = response.bodyAsText()
-            val parsedTracks = parseInnerTubeSearchResponse(responseText)
-
-            if (parsedTracks.isNotEmpty()) {
-                return@withContext parsedTracks
+            val response = withTimeoutOrNull(6500L) {
+                innerTube.search(
+                    client = YouTubeClient.WEB_REMIX,
+                    query = trimmed
+                )
+            }
+            if (response != null) {
+                val responseText = response.bodyAsText()
+                val parsedTracks = parseInnerTubeSearchResponse(responseText)
+                if (parsedTracks.isNotEmpty()) {
+                    return@withContext parsedTracks
+                }
             }
         } catch (_: Exception) {
-            // Fall through to catalog fallback on network or parsing edge cases
+            // Fall through to local catalog fallback
         }
 
-        // Return curated / fallback matches
         return@withContext MusicCatalogData.search(trimmed)
     }
 
-    /**
-     * Parse raw InnerTube JSON search payload and map track title, artist name,
-     * thumbnail URL, video ID, and duration into MusicTrack models.
-     */
     private fun parseInnerTubeSearchResponse(rawJson: String): List<MusicTrack> {
         val tracks = mutableListOf<MusicTrack>()
         try {
@@ -214,9 +210,23 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
         }
     }
 
+    private fun normalizeThumbnailUrl(rawUrl: String?, videoId: String): String {
+        val cleaned = rawUrl?.trim().orEmpty()
+        val withHttps = when {
+            cleaned.startsWith("//") -> "https:$cleaned"
+            cleaned.startsWith("http://") -> "https://" + cleaned.removePrefix("http://")
+            else -> cleaned
+        }.replace(Regex("=w\\d+-h\\d+[^\"&\\s]*"), "=w544-h544-l90-rj")
+
+        return if (withHttps.startsWith("https://")) {
+            withHttps
+        } else {
+            "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+        }
+    }
+
     private fun mapRendererToTrack(renderer: JsonObject): MusicTrack? {
         try {
-            // 1. Extract Video ID
             val playNav = renderer["overlay"]
                 ?.jsonObject?.get("musicItemThumbnailOverlayRenderer")
                 ?.jsonObject?.get("content")
@@ -233,7 +243,6 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
             val videoId = playNav ?: navVideoId ?: return null
 
-            // 2. Extract Title & Artist from flexColumns
             val flexColumns = renderer["flexColumns"]?.jsonArray ?: return null
             if (flexColumns.isEmpty()) return null
 
@@ -255,26 +264,20 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 ?.jsonObject?.get("text")
                 ?.jsonPrimitive?.content ?: "FM Music Artist"
 
-            // 3. Extract Duration
             val durationText = artistRuns?.lastOrNull()
                 ?.jsonObject?.get("text")
                 ?.jsonPrimitive?.content
             val durationSeconds = parseDurationToSeconds(durationText)
 
-            // 4. Extract Thumbnail
             val thumbnails = renderer["thumbnail"]
                 ?.jsonObject?.get("musicThumbnailRenderer")
                 ?.jsonObject?.get("thumbnail")
                 ?.jsonObject?.get("thumbnails")
                 ?.jsonArray
 
-            val thumbnail = thumbnails?.lastOrNull()
+            val rawThumb = thumbnails?.lastOrNull()
                 ?.jsonObject?.get("url")
                 ?.jsonPrimitive?.content
-                ?: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&q=80"
-
-            // 5. Modular media streaming URL
-            val streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
 
             return MusicTrack(
                 id = videoId,
@@ -284,8 +287,8 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 durationSeconds = durationSeconds,
                 vibe = "Search",
                 youtubeId = videoId,
-                streamUrl = streamUrl,
-                thumbnailUrl = thumbnail
+                streamUrl = "",
+                thumbnailUrl = normalizeThumbnailUrl(rawThumb, videoId)
             )
         } catch (_: Exception) {
             return null
@@ -313,72 +316,151 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
     private val streamCache = ConcurrentHashMap<String, PlayerStreamInfo>()
 
+    fun invalidateStream(videoId: String) {
+        val cleanId = videoId.trim()
+        if (cleanId.isNotBlank()) {
+            streamCache.remove(cleanId)
+        }
+    }
+
     /**
-     * Extracts signed stream URLs from the player endpoint for the specified video ID.
-     * Evaluates streamingData.adaptiveFormats for high quality audio, with Piped API stream fallback.
+     * Resolves a direct playable audio stream URL + required HTTP headers for ExoPlayer.
+     *
+     * Stage 1: InnerTubeX's InnerTubeExtractor (client fallback + QuackJS cipher/n-param decryption).
+     * Stage 2: Direct InnerTube player API profiles (ANDROID_VR, IOS, ANDROID_MUSIC) with playability check.
+     * Stage 3: Piped & Invidious public stream extractors.
      */
-    suspend fun extractPlayerStream(videoId: String): PlayerStreamInfo = withContext(Dispatchers.IO) {
+    suspend fun extractPlayerStream(
+        videoId: String,
+        allowFallback: Boolean = false
+    ): PlayerStreamInfo = withContext(Dispatchers.IO) {
         val cleanId = videoId.trim()
         val cached = streamCache[cleanId]
-        if (cached != null) {
+        if (cached != null && !cached.isExpired && cached.streamUrl.startsWith("http")) {
             return@withContext cached
+        }
+        streamCache.remove(cleanId)
+
+        // Stage 1: InnerTubeX built-in StreamExtractor (handles cipher + n-param + client headers)
+        try {
+            val extracted = withTimeoutOrNull(11_000L) {
+                streamExtractor.extract(
+                    videoId = cleanId,
+                    audioQuality = AudioQuality.AUTO
+                )
+            }
+            if (extracted != null && extracted.audioUrl.startsWith("http")) {
+                val info = PlayerStreamInfo(
+                    videoId = cleanId,
+                    streamUrl = extracted.audioUrl,
+                    mimeType = extracted.mimeType.ifBlank { "audio/mp4" },
+                    bitrate = extracted.bitrate ?: 128000,
+                    itag = extracted.itag,
+                    source = "InnerTube (${extracted.clientName})",
+                    isSigned = true,
+                    headers = extracted.headers
+                )
+                streamCache[cleanId] = info
+                return@withContext info
+            }
+        } catch (_: Exception) {
+            // Continue to direct InnerTube clients
         }
 
         val visitorToken = mutableVisitorData.value ?: mutableSessionState.value.visitorData
 
-        // 1. Try InnerTube player clients that return direct playable audio URLs without JS cipher
-        val clientProfiles = listOf(
-            Triple("ANDROID_MUSIC", "7.29.52", "com.google.android.apps.youtube.music/7.29.52 (Linux; U; Android 14)"),
-            Triple("ANDROID_VR", "1.60.19", "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L)"),
-            Triple("IOS", "20.10.4", "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3 like Mac OS X)"),
-            Triple("WEB_REMIX", "1.20240101.01.00", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+        // Stage 2: Direct InnerTube player clients that issue unencrypted direct audio URLs
+        data class ClientProfile(
+            val clientName: String,
+            val clientVersion: String,
+            val clientId: String,
+            val userAgent: String,
+            val extraClientFields: Map<String, String> = emptyMap()
         )
 
-        for ((cName, cVersion, ua) in clientProfiles) {
+        val clientProfiles = listOf(
+            ClientProfile(
+                clientName = "ANDROID_VR",
+                clientVersion = "1.65.10",
+                clientId = "28",
+                userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+                extraClientFields = mapOf("deviceMake" to "Oculus", "deviceModel" to "Quest 3", "osName" to "Android", "osVersion" to "12L")
+            ),
+            ClientProfile(
+                clientName = "IOS",
+                clientVersion = "20.10.4",
+                clientId = "5",
+                userAgent = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
+                extraClientFields = mapOf("deviceMake" to "Apple", "deviceModel" to "iPhone16,2", "osName" to "iPhone", "osVersion" to "18.3.2.22D82")
+            ),
+            ClientProfile(
+                clientName = "ANDROID_MUSIC",
+                clientVersion = "7.29.52",
+                clientId = "21",
+                userAgent = "com.google.android.apps.youtube.music/7.29.52 (Linux; U; Android 14; en_US; Pixel 8) gzip",
+                extraClientFields = mapOf("osName" to "Android", "osVersion" to "14")
+            )
+        )
+
+        for (profile in clientProfiles) {
             try {
                 val payload = buildJsonObject {
                     put("context", buildJsonObject {
                         put("client", buildJsonObject {
-                            put("clientName", cName)
-                            put("clientVersion", cVersion)
+                            put("clientName", profile.clientName)
+                            put("clientVersion", profile.clientVersion)
                             put("hl", "en")
                             put("gl", "US")
+                            profile.extraClientFields.forEach { (k, v) -> put(k, v) }
                             if (!visitorToken.isNullOrBlank()) {
                                 put("visitorData", visitorToken)
                             }
                         })
                     })
                     put("videoId", cleanId)
+                    put("contentCheckOk", true)
+                    put("racyCheckOk", true)
                 }.toString()
 
-                val response = httpClient.post("https://music.youtube.com/youtubei/v1/player?prettyPrint=false") {
-                    contentType(ContentType.Application.Json)
-                    header("User-Agent", ua)
-                    if (!visitorToken.isNullOrBlank()) {
-                        header("X-Goog-Visitor-Id", visitorToken)
-                    }
-                    setBody(payload)
-                }
-                val text = response.bodyAsText()
-                val parsed = parsePlayerResponse(cleanId, text)
+                val text = withTimeoutOrNull(5000L) {
+                    httpClient.post("https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false") {
+                        contentType(ContentType.Application.Json)
+                        header("User-Agent", profile.userAgent)
+                        header("X-YouTube-Client-Name", profile.clientId)
+                        header("X-YouTube-Client-Version", profile.clientVersion)
+                        if (!visitorToken.isNullOrBlank()) {
+                            header("X-Goog-Visitor-Id", visitorToken)
+                        }
+                        setBody(payload)
+                    }.bodyAsText()
+                } ?: continue
+
+                val parsed = parsePlayerResponse(
+                    videoId = cleanId,
+                    rawJson = text,
+                    sourceLabel = "InnerTube (${profile.clientName})",
+                    streamHeaders = mapOf("User-Agent" to profile.userAgent)
+                )
                 if (parsed != null) {
                     streamCache[cleanId] = parsed
                     return@withContext parsed
                 }
             } catch (_: Exception) {
-                // Try next InnerTube client profile
+                // Try next profile
             }
         }
 
-        // 2. Fallback to Piped stream extraction API
+        // Stage 3: Piped API public instances
         val pipedUrls = listOf(
             "https://pipedapi.kavin.rocks/streams/$cleanId",
-            "https://api.piped.video/streams/$cleanId"
+            "https://api.piped.video/streams/$cleanId",
+            "https://pipedapi.adminforge.de/streams/$cleanId"
         )
         for (pipedUrl in pipedUrls) {
             try {
-                val response = httpClient.get(pipedUrl)
-                val text = response.bodyAsText()
+                val text = withTimeoutOrNull(4500L) {
+                    httpClient.get(pipedUrl).bodyAsText()
+                } ?: continue
                 val parsed = parsePipedResponse(cleanId, text)
                 if (parsed != null) {
                     streamCache[cleanId] = parsed
@@ -387,27 +469,59 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             } catch (_: Exception) {}
         }
 
-        // 3. Resilient signed stream fallback
-        val fallback = PlayerStreamInfo(
-            videoId = cleanId,
-            streamUrl = "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3?sig=signed_$cleanId&expire=${System.currentTimeMillis() / 1000 + 21600}",
-            mimeType = "audio/mpeg",
-            bitrate = 128000,
-            source = "Licensed Audio Stream",
-            isSigned = true
+        // Stage 4: Invidious public instances
+        val invidiousUrls = listOf(
+            "https://inv.nadeko.net/api/v1/videos/$cleanId",
+            "https://invidious.nerdvpn.de/api/v1/videos/$cleanId"
         )
-        streamCache[cleanId] = fallback
-        return@withContext fallback
+        for (invUrl in invidiousUrls) {
+            try {
+                val text = withTimeoutOrNull(4500L) {
+                    httpClient.get(invUrl).bodyAsText()
+                } ?: continue
+                val parsed = parseInvidiousResponse(cleanId, text)
+                if (parsed != null) {
+                    streamCache[cleanId] = parsed
+                    return@withContext parsed
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (allowFallback) {
+            val fallback = PlayerStreamInfo(
+                videoId = cleanId,
+                streamUrl = "https://music.youtube.com/watch?v=$cleanId",
+                mimeType = "audio/mp4",
+                bitrate = 128000,
+                source = "InnerTube Fallback Metadata",
+                isSigned = true
+            )
+            return@withContext fallback
+        }
+
+        throw IllegalStateException("Could not resolve playable audio stream for $cleanId. Tap Retry or check network.")
     }
 
-    private fun parsePlayerResponse(videoId: String, rawJson: String): PlayerStreamInfo? {
+    private fun parsePlayerResponse(
+        videoId: String,
+        rawJson: String,
+        sourceLabel: String,
+        streamHeaders: Map<String, String>
+    ): PlayerStreamInfo? {
         try {
             val root = json.parseToJsonElement(rawJson).jsonObject
+            val playability = root["playabilityStatus"]?.jsonObject
+            val status = playability?.get("status")?.jsonPrimitive?.content
+            if (status != null && !status.equals("OK", ignoreCase = true)) {
+                return null
+            }
+
             val streamingData = root["streamingData"]?.jsonObject ?: return null
             val adaptiveFormats = streamingData["adaptiveFormats"]?.jsonArray ?: return null
             val expiresIn = streamingData["expiresInSeconds"]?.jsonPrimitive?.content?.toLongOrNull() ?: 21600L
 
             var bestUrl: String? = null
+            var bestScore = -1
             var bestBitrate = 0
             var bestMime = "audio/mp4"
             var bestItag: Int? = null
@@ -416,13 +530,19 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 val fmt = fmtElement.jsonObject
                 val mime = fmt["mimeType"]?.jsonPrimitive?.content ?: ""
                 if (mime.startsWith("audio/")) {
-                    val bitrate = fmt["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
                     val url = fmt["url"]?.jsonPrimitive?.content
-                    if (!url.isNullOrBlank() && bitrate >= bestBitrate) {
-                        bestBitrate = bitrate
-                        bestUrl = url
-                        bestMime = mime
-                        bestItag = fmt["itag"]?.jsonPrimitive?.content?.toIntOrNull()
+                    if (!url.isNullOrBlank() && url.startsWith("http")) {
+                        val bitrate = fmt["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                        // Prefer m4a/mp4 slightly for universal Media3 hardware compatibility
+                        val containerBonus = if (mime.contains("mp4", ignoreCase = true)) 15000 else 0
+                        val score = bitrate + containerBonus
+                        if (score >= bestScore) {
+                            bestScore = score
+                            bestBitrate = bitrate
+                            bestUrl = url
+                            bestMime = mime
+                            bestItag = fmt["itag"]?.jsonPrimitive?.content?.toIntOrNull()
+                        }
                     }
                 }
             }
@@ -435,8 +555,9 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                     bitrate = if (bestBitrate > 0) bestBitrate else 128000,
                     itag = bestItag,
                     expiresInSeconds = expiresIn,
-                    source = "InnerTube Player Endpoint",
-                    isSigned = true
+                    source = sourceLabel,
+                    isSigned = true,
+                    headers = streamHeaders
                 )
             }
         } catch (_: Exception) {}
@@ -448,6 +569,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             val root = json.parseToJsonElement(rawJson).jsonObject
             val audioStreams = root["audioStreams"]?.jsonArray ?: return null
             var bestUrl: String? = null
+            var bestScore = -1
             var bestBitrate = 0
             var bestMime = "audio/mp4"
 
@@ -457,10 +579,15 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 val bitrate = streamObj["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
                 val rawMime = streamObj["mimeType"]?.jsonPrimitive?.content.orEmpty()
                 val mime = if (rawMime.contains("audio", ignoreCase = true)) rawMime else "audio/mp4"
-                if (!url.isNullOrBlank() && bitrate >= bestBitrate) {
-                    bestBitrate = bitrate
-                    bestUrl = url
-                    bestMime = mime
+                if (!url.isNullOrBlank() && url.startsWith("http")) {
+                    val bonus = if (mime.contains("mp4", ignoreCase = true)) 15000 else 0
+                    val score = bitrate + bonus
+                    if (score >= bestScore) {
+                        bestScore = score
+                        bestBitrate = bitrate
+                        bestUrl = url
+                        bestMime = mime
+                    }
                 }
             }
 
@@ -471,6 +598,45 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                     mimeType = bestMime,
                     bitrate = if (bestBitrate > 0) bestBitrate else 128000,
                     source = "Piped Stream Extractor",
+                    isSigned = true
+                )
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun parseInvidiousResponse(videoId: String, rawJson: String): PlayerStreamInfo? {
+        try {
+            val root = json.parseToJsonElement(rawJson).jsonObject
+            val adaptiveFormats = root["adaptiveFormats"]?.jsonArray ?: return null
+            var bestUrl: String? = null
+            var bestScore = -1
+            var bestBitrate = 0
+            var bestMime = "audio/mp4"
+
+            for (fmtEl in adaptiveFormats) {
+                val fmtObj = fmtEl.jsonObject
+                val type = fmtObj["type"]?.jsonPrimitive?.content.orEmpty()
+                val url = fmtObj["url"]?.jsonPrimitive?.content
+                if (type.startsWith("audio/") && !url.isNullOrBlank() && url.startsWith("http")) {
+                    val bitrate = fmtObj["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 128000
+                    val bonus = if (type.contains("mp4", ignoreCase = true)) 15000 else 0
+                    if (bitrate + bonus >= bestScore) {
+                        bestScore = bitrate + bonus
+                        bestBitrate = bitrate
+                        bestUrl = url
+                        bestMime = type
+                    }
+                }
+            }
+
+            if (!bestUrl.isNullOrBlank()) {
+                return PlayerStreamInfo(
+                    videoId = videoId,
+                    streamUrl = bestUrl,
+                    mimeType = bestMime,
+                    bitrate = if (bestBitrate > 0) bestBitrate else 128000,
+                    source = "Invidious Extractor",
                     isSigned = true
                 )
             }

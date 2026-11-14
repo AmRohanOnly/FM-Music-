@@ -1,6 +1,8 @@
 package com.fmmusic.client
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
@@ -10,6 +12,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,12 +37,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -69,7 +77,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,7 +94,11 @@ import com.fmmusic.client.model.RepeatMode
 import com.fmmusic.client.playback.ExoPlaybackManager
 import com.fmmusic.client.update.AppUpdateUiState
 import com.fmmusic.client.update.ReleaseUpdateInfo
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Calendar
 
 private val Ink = Color(0xFF111116)
@@ -151,6 +168,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     val visitorSession by MusicApplication.instance.innerTubeService.sessionState.collectAsState()
     val updateManager = MusicApplication.instance.updateManager
     val updateState by updateManager.state.collectAsState()
+    val focusManager = LocalFocusManager.current
 
     var sectionMode by remember { mutableStateOf(MainSectionMode.ONLINE) }
     var searchFilterMode by remember { mutableStateOf("ALL") }
@@ -396,6 +414,8 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                     placeholder = { Text("Songs, artists, albums", color = Color(0xFF6B6B7A)) },
                     shape = RoundedCornerShape(16.dp),
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent,
                         unfocusedBorderColor = BorderDark,
@@ -639,7 +659,9 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
             onToggleRepeat = playbackManager::toggleRepeat,
             onOpenSleepTimer = { showSleepTimerDialog = true },
             onToggleFavorite = { MusicApplication.instance.toggleFavorite(curTrack.id) },
-            onToggleDownload = { MusicApplication.instance.toggleDownload(curTrack) }
+            onToggleDownload = { MusicApplication.instance.toggleDownload(curTrack) },
+            onPlayQueueTrack = playbackManager::playFromQueue,
+            onRetryTrack = playbackManager::retryCurrentTrack
         )
     }
 
@@ -758,6 +780,7 @@ private fun OfflineCollectionSection(
         Spacer(Modifier.height(18.dp))
 
         if (downloadedTracks.isNotEmpty()) {
+            val offlineFocusManager = LocalFocusManager.current
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChange,
@@ -765,6 +788,8 @@ private fun OfflineCollectionSection(
                 placeholder = { Text("Search your downloaded songs", color = Color(0xFF6B6B7A)) },
                 shape = RoundedCornerShape(14.dp),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { offlineFocusManager.clearFocus() }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Accent,
                     unfocusedBorderColor = BorderDark,
@@ -857,6 +882,128 @@ private fun OfflineCollectionSection(
     }
 }
 
+private object ArtworkBitmapCache {
+    private val cache = LruCache<String, ImageBitmap>(60)
+
+    fun get(url: String): ImageBitmap? {
+        if (url.isBlank()) return null
+        return synchronized(cache) { cache.get(url) }
+    }
+
+    fun put(url: String, bitmap: ImageBitmap) {
+        if (url.isBlank()) return
+        synchronized(cache) { cache.put(url, bitmap) }
+    }
+}
+
+private suspend fun loadImageBitmapFromUrl(urlString: String): ImageBitmap? = withContext(Dispatchers.IO) {
+    if (!urlString.startsWith("https://") && !urlString.startsWith("http://")) {
+        return@withContext null
+    }
+    var connection: HttpURLConnection? = null
+    try {
+        connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 8000
+            readTimeout = 8000
+            instanceFollowRedirects = true
+            setRequestProperty(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            )
+        }
+        connection.connect()
+        if (connection.responseCode in 200..299) {
+            val bytes = connection.inputStream.use { it.readBytes() }
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            return@withContext decoded?.asImageBitmap()
+        }
+    } catch (_: Exception) {
+        // Fallback handled by caller
+    } finally {
+        try {
+            connection?.disconnect()
+        } catch (_: Exception) {}
+    }
+    null
+}
+
+@Composable
+private fun TrackArtworkImage(
+    track: MusicTrack?,
+    modifier: Modifier = Modifier,
+    showPlayingVisualizer: Boolean = false,
+    cornerRadiusDp: Int = 10,
+    placeholderTextSizeSp: Int = 14
+) {
+    val primaryUrl = track?.resolvedThumbnailUrl.orEmpty()
+    val fallbackUrl = remember(track?.youtubeId, track?.id) {
+        val vid = track?.youtubeId?.ifBlank { track.id }.orEmpty().trim()
+        if (vid.isNotBlank() && !vid.contains("-") && !vid.startsWith("dyn")) {
+            "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+        } else {
+            ""
+        }
+    }
+
+    var bitmap by remember(primaryUrl, fallbackUrl) {
+        mutableStateOf(
+            ArtworkBitmapCache.get(primaryUrl) ?: ArtworkBitmapCache.get(fallbackUrl)
+        )
+    }
+
+    LaunchedEffect(primaryUrl, fallbackUrl) {
+        if (bitmap == null) {
+            val loadedPrimary = if (primaryUrl.isNotBlank()) {
+                loadImageBitmapFromUrl(primaryUrl)?.also { ArtworkBitmapCache.put(primaryUrl, it) }
+            } else null
+
+            val resolved = loadedPrimary ?: if (fallbackUrl.isNotBlank() && fallbackUrl != primaryUrl) {
+                loadImageBitmapFromUrl(fallbackUrl)?.also { ArtworkBitmapCache.put(fallbackUrl, it) }
+            } else null
+
+            if (resolved != null) {
+                bitmap = resolved
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(cornerRadiusDp.dp))
+            .background(PanelSecondary),
+        contentAlignment = Alignment.Center
+    ) {
+        val currentBitmap = bitmap
+        if (currentBitmap != null) {
+            Image(
+                bitmap = currentBitmap,
+                contentDescription = track?.title ?: "Album Artwork",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (showPlayingVisualizer) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Ink.copy(alpha = 0.48f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedVisualizerBars(isPlaying = true)
+                }
+            }
+        } else if (showPlayingVisualizer) {
+            AnimatedVisualizerBars(isPlaying = true)
+        } else {
+            Text(
+                text = track?.title?.take(2)?.uppercase()?.ifBlank { "FM" } ?: "FM",
+                color = Accent,
+                fontWeight = FontWeight.Bold,
+                fontSize = placeholderTextSizeSp.sp
+            )
+        }
+    }
+}
+
 @Composable
 private fun FmLogoBadge(size: Int) {
     Surface(
@@ -895,24 +1042,12 @@ private fun TrackListItem(
                 .padding(vertical = 6.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
+            TrackArtworkImage(
+                track = track,
                 modifier = Modifier.size(46.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = PanelSecondary
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (isPlaying) {
-                        AnimatedVisualizerBars(isPlaying = true)
-                    } else {
-                        Text(
-                            track.title.take(2).uppercase(),
-                            color = Accent,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
+                showPlayingVisualizer = isPlaying,
+                cornerRadiusDp = 10
+            )
 
             Spacer(Modifier.width(12.dp))
 
@@ -1024,19 +1159,29 @@ private fun MiniPlayerBar(
             .clickable(onClick = onExpand)
     ) {
         Column {
-            // Live Scrubber Progress line
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(PanelSecondary)
-            ) {
+            if (state.isBuffering) {
+                LinearProgressIndicator(
+                    color = Accent,
+                    trackColor = PanelSecondary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                )
+            } else {
+                // Live Scrubber Progress line
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(state.progressFraction)
+                        .fillMaxWidth()
                         .height(3.dp)
-                        .background(Accent)
-                )
+                        .background(PanelSecondary)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(state.progressFraction)
+                            .height(3.dp)
+                            .background(Accent)
+                    )
+                }
             }
 
             Row(
@@ -1046,7 +1191,12 @@ private fun MiniPlayerBar(
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AnimatedVisualizerBars(isPlaying = state.isPlaying)
+                TrackArtworkImage(
+                    track = state.currentTrack,
+                    modifier = Modifier.size(42.dp),
+                    showPlayingVisualizer = state.isPlaying,
+                    cornerRadiusDp = 10
+                )
 
                 Spacer(Modifier.width(12.dp))
 
@@ -1068,11 +1218,17 @@ private fun MiniPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        if (!state.streamSource.isNullOrBlank()) {
+                        val statusText = when {
+                            !state.errorMessage.isNullOrBlank() -> "• Tap to Retry"
+                            state.isBuffering -> "• Buffering..."
+                            !state.streamSource.isNullOrBlank() -> "• ${state.streamSource}"
+                            else -> null
+                        }
+                        if (!statusText.isNullOrBlank()) {
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "• " + (state.streamSource ?: ""),
-                                color = Accent,
+                                statusText,
+                                color = if (!state.errorMessage.isNullOrBlank()) Color(0xFFFF7A7A) else Accent,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
@@ -1103,7 +1259,15 @@ private fun MiniPlayerBar(
                     modifier = Modifier.size(40.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                 ) {
-                    Text(if (state.isPlaying) "⏸" else "▶", color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    if (state.isBuffering && !state.isPlaying) {
+                        CircularProgressIndicator(
+                            color = Ink,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        Text(if (state.isPlaying) "⏸" else "▶", color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
                 }
 
                 Spacer(Modifier.width(6.dp))
@@ -1138,7 +1302,9 @@ private fun NowPlayingSheet(
     onToggleRepeat: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onToggleDownload: () -> Unit
+    onToggleDownload: () -> Unit,
+    onPlayQueueTrack: (Int) -> Unit,
+    onRetryTrack: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableStateOf(0) }
@@ -1162,7 +1328,8 @@ private fun NowPlayingSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 28.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header Tab row
@@ -1193,31 +1360,62 @@ private fun NowPlayingSheet(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(18.dp))
 
             when (selectedTab) {
                 0 -> {
-                    // Track Art and Visualizer
-                    Surface(
+                    // Track Album Art + Live Playback Overlay
+                    Box(
                         modifier = Modifier
-                            .size(240.dp)
-                            .clip(RoundedCornerShape(24.dp)),
-                        color = Panel
+                            .size(220.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Panel),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
+                        TrackArtworkImage(
+                            track = state.currentTrack,
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            FmLogoBadge(size = 64)
-                            Spacer(Modifier.height(16.dp))
-                            AnimatedVisualizerBars(isPlaying = state.isPlaying, heightDp = 30)
+                            showPlayingVisualizer = false,
+                            cornerRadiusDp = 24,
+                            placeholderTextSizeSp = 36
+                        )
+
+                        if (state.isBuffering || state.isPlaying) {
+                            Surface(
+                                color = Ink.copy(alpha = 0.78f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (state.isBuffering) {
+                                        CircularProgressIndicator(
+                                            color = Accent,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            "Buffering",
+                                            color = Accent,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    } else {
+                                        AnimatedVisualizerBars(isPlaying = true, heightDp = 16)
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(20.dp))
 
-                    // Title & Artist with Favorite
+                    // Title & Artist with Download + Favorite
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1240,6 +1438,8 @@ private fun NowPlayingSheet(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+
+                        Spacer(Modifier.width(8.dp))
 
                         // Download button
                         Button(
@@ -1273,45 +1473,97 @@ private fun NowPlayingSheet(
                         }
                     }
 
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(12.dp))
 
-                    // ExoPlayer Signed Stream Engine Badge
-                    Surface(
-                        color = PanelSecondary,
-                        shape = RoundedCornerShape(10.dp),
-                        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BorderDark))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    // Stream Source Badge or Playback Error Retry Card
+                    if (!state.errorMessage.isNullOrBlank()) {
+                        Surface(
+                            color = Color(0xFF2D191E),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFFF7A7A).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(6.dp)
-                                    .background(Accent, CircleShape)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "ExoPlayer • " + (state.streamSource ?: "Signed Stream (InnerTube Player Endpoint)"),
-                                color = Accent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    state.errorMessage,
+                                    color = Color(0xFFFFB4B4),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Button(
+                                    onClick = onRetryTrack,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Retry", color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(
+                            color = PanelSecondary,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BorderDark)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(Accent, CircleShape)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    when {
+                                        state.isBuffering -> "Resolving audio stream..."
+                                        !state.streamSource.isNullOrBlank() -> "ExoPlayer • ${state.streamSource}"
+                                        else -> "ExoPlayer • InnerTube Stream Engine"
+                                    },
+                                    color = Accent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Scrubber Timeline Slider
-                    var sliderPos by remember(state.currentPositionMs) {
-                        mutableFloatStateOf(state.currentPositionMs.toFloat())
+                    // Scrubber Timeline Slider with smooth drag state
+                    var isDraggingSlider by remember(state.currentTrack?.id) { mutableStateOf(false) }
+                    var dragPositionFloat by remember(state.currentTrack?.id) { mutableFloatStateOf(0f) }
+                    val maxDurationFloat = state.durationMs.coerceAtLeast(1L).toFloat()
+                    val displayedSliderPos = if (isDraggingSlider) {
+                        dragPositionFloat.coerceIn(0f, maxDurationFloat)
+                    } else {
+                        state.currentPositionMs.toFloat().coerceIn(0f, maxDurationFloat)
                     }
 
                     Slider(
-                        value = sliderPos,
-                        onValueChange = { sliderPos = it },
-                        onValueChangeFinished = { onSeek(sliderPos.toLong()) },
-                        valueRange = 0f..(state.durationMs.coerceAtLeast(1L).toFloat()),
+                        value = displayedSliderPos,
+                        onValueChange = {
+                            isDraggingSlider = true
+                            dragPositionFloat = it
+                        },
+                        onValueChangeFinished = {
+                            onSeek(dragPositionFloat.toLong())
+                            isDraggingSlider = false
+                        },
+                        valueRange = 0f..maxDurationFloat,
                         colors = SliderDefaults.colors(
                             thumbColor = Accent,
                             activeTrackColor = Accent,
@@ -1324,78 +1576,155 @@ private fun NowPlayingSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatDuration(state.currentPositionMs), color = SoftText, fontSize = 12.sp)
+                        Text(
+                            formatDuration(if (isDraggingSlider) dragPositionFloat.toLong() else state.currentPositionMs),
+                            color = SoftText,
+                            fontSize = 12.sp
+                        )
                         Text(formatDuration(state.durationMs), color = SoftText, fontSize = 12.sp)
                     }
 
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(16.dp))
 
-                    // Main Controls Row
+                    // Primary Transport Controls Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Shuffle
-                        TextButton(onClick = onToggleShuffle) {
-                            Text(if (state.isShuffled) "🔀 ON" else "🔀", color = if (state.isShuffled) Accent else SoftText)
-                        }
-
-                        // Prev
                         Button(
                             onClick = onPrev,
                             colors = ButtonDefaults.buttonColors(containerColor = PanelSecondary),
                             shape = CircleShape,
-                            modifier = Modifier.size(50.dp)
+                            modifier = Modifier.size(52.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text("⏮", color = Color.White, fontSize = 16.sp)
+                            Text("⏮", color = Color.White, fontSize = 17.sp)
                         }
 
-                        // Play/Pause
+                        Spacer(Modifier.width(22.dp))
+
                         Button(
                             onClick = onTogglePlay,
                             colors = ButtonDefaults.buttonColors(containerColor = Accent),
                             shape = CircleShape,
-                            modifier = Modifier.size(68.dp)
+                            modifier = Modifier.size(68.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text(if (state.isPlaying) "⏸" else "▶", color = Ink, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                            if (state.isBuffering && !state.isPlaying) {
+                                CircularProgressIndicator(
+                                    color = Ink,
+                                    strokeWidth = 3.dp,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            } else {
+                                Text(
+                                    if (state.isPlaying) "⏸" else "▶",
+                                    color = Ink,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 24.sp
+                                )
+                            }
                         }
 
-                        // Next
+                        Spacer(Modifier.width(22.dp))
+
                         Button(
                             onClick = onNext,
                             colors = ButtonDefaults.buttonColors(containerColor = PanelSecondary),
                             shape = CircleShape,
-                            modifier = Modifier.size(50.dp)
+                            modifier = Modifier.size(52.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                         ) {
-                            Text("⏭", color = Color.White, fontSize = 16.sp)
-                        }
-
-                        // Repeat
-                        TextButton(onClick = onToggleRepeat) {
-                            Text(
-                                when (state.repeatMode) {
-                                    RepeatMode.OFF -> "🔁"
-                                    RepeatMode.ALL -> "🔁 ALL"
-                                    RepeatMode.ONE -> "🔂 ONE"
-                                },
-                                color = if (state.repeatMode != RepeatMode.OFF) Accent else SoftText
-                            )
+                            Text("⏭", color = Color.White, fontSize = 17.sp)
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(18.dp))
 
-                    // Sleep Timer row button
-                    TextButton(onClick = onOpenSleepTimer) {
-                        Text(
-                            if (state.sleepTimerMinutesRemaining != null)
-                                "⏳ Sleep Timer: ${state.sleepTimerMinutesRemaining}m left"
-                            else
-                                "⏳ Set Sleep Timer",
-                            color = Accent,
-                            fontSize = 12.sp
-                        )
+                    // Secondary Playback Modes Row: Shuffle, Repeat, Sleep Timer
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = onToggleShuffle,
+                            color = if (state.isShuffled) Accent else PanelSecondary,
+                            shape = RoundedCornerShape(12.dp),
+                            border = if (state.isShuffled) null else BorderStroke(1.dp, BorderDark),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 42.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = if (state.isShuffled) "🔀 Shuffle On" else "🔀 Shuffle",
+                                    color = if (state.isShuffled) Ink else Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        val repeatActive = state.repeatMode != RepeatMode.OFF
+                        Surface(
+                            onClick = onToggleRepeat,
+                            color = if (repeatActive) Accent else PanelSecondary,
+                            shape = RoundedCornerShape(12.dp),
+                            border = if (repeatActive) null else BorderStroke(1.dp, BorderDark),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 42.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = when (state.repeatMode) {
+                                        RepeatMode.OFF -> "🔁 Repeat Off"
+                                        RepeatMode.ALL -> "🔁 Repeat All"
+                                        RepeatMode.ONE -> "🔂 Repeat 1"
+                                    },
+                                    color = if (repeatActive) Ink else Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        val timerActive = state.sleepTimerMinutesRemaining != null
+                        Surface(
+                            onClick = onOpenSleepTimer,
+                            color = if (timerActive) Accent else PanelSecondary,
+                            shape = RoundedCornerShape(12.dp),
+                            border = if (timerActive) null else BorderStroke(1.dp, BorderDark),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 42.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = if (timerActive) "⏳ ${state.sleepTimerMinutesRemaining}m" else "⏳ Timer",
+                                    color = if (timerActive) Ink else Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1434,7 +1763,7 @@ private fun NowPlayingSheet(
                 }
 
                 2 -> {
-                    // Queue list
+                    // Interactive Queue list
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1442,7 +1771,7 @@ private fun NowPlayingSheet(
                             .verticalScroll(rememberScrollState())
                     ) {
                         Text(
-                            "UP NEXT (${state.queue.size} TRACKS)",
+                            "UP NEXT (${state.queue.size} TRACKS)" + if (state.isShuffled) " • SHUFFLED" else "",
                             color = SoftText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -1451,6 +1780,7 @@ private fun NowPlayingSheet(
                         state.queue.forEachIndexed { index, track ->
                             val isThis = index == state.queueIndex
                             Surface(
+                                onClick = { onPlayQueueTrack(index) },
                                 color = if (isThis) PanelSecondary else Color.Transparent,
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
@@ -1458,14 +1788,42 @@ private fun NowPlayingSheet(
                                     .padding(vertical = 3.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("${index + 1}", color = SoftText, fontSize = 12.sp, modifier = Modifier.width(24.dp))
+                                    Text(
+                                        "${index + 1}",
+                                        color = if (isThis) Accent else SoftText,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isThis) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.width(22.dp)
+                                    )
+                                    TrackArtworkImage(
+                                        track = track,
+                                        modifier = Modifier.size(38.dp),
+                                        showPlayingVisualizer = isThis && state.isPlaying,
+                                        cornerRadiusDp = 8,
+                                        placeholderTextSizeSp = 11
+                                    )
+                                    Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(track.title, color = if (isThis) Accent else Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                        Text(track.artist, color = SoftText, fontSize = 11.sp)
+                                        Text(
+                                            track.title,
+                                            color = if (isThis) Accent else Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            track.artist,
+                                            color = SoftText,
+                                            fontSize = 11.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
+                                    Spacer(Modifier.width(6.dp))
                                     Text(track.durationFormatted, color = SoftText, fontSize = 11.sp)
                                 }
                             }

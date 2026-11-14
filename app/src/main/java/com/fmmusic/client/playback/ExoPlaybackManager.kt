@@ -2,12 +2,18 @@ package com.fmmusic.client.playback
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.fmmusic.client.MusicApplication
 import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.model.PlaybackUiState
@@ -22,10 +28,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+@OptIn(UnstableApi::class)
 class ExoPlaybackManager(context: Context) {
+    private val appContext = context.applicationContext
     private val scope = CoroutineScope(Dispatchers.Main.immediate)
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext)
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent(DEFAULT_USER_AGENT)
+        .setConnectTimeoutMs(10_000)
+        .setReadTimeoutMs(15_000)
+        .setAllowCrossProtocolRedirects(true)
+
+    private val dataSourceFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
+
+    private val player: ExoPlayer = ExoPlayer.Builder(appContext)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
@@ -42,8 +59,11 @@ class ExoPlaybackManager(context: Context) {
     private val mutableState = MutableStateFlow(PlaybackUiState())
     val state = mutableState.asStateFlow()
 
+    private var originalQueue: List<MusicTrack> = emptyList()
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var loadTrackJob: Job? = null
+    private var retriedCurrentTrack = false
 
     init {
         player.addListener(object : Player.Listener {
@@ -66,35 +86,69 @@ class ExoPlaybackManager(context: Context) {
                     )
                 }
 
-                if (playbackState == Player.STATE_ENDED) {
+                if (playbackState == Player.STATE_READY) {
+                    retriedCurrentTrack = false
+                } else if (playbackState == Player.STATE_ENDED) {
                     handleTrackEnded()
                 }
             }
 
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            override fun onPlayerError(error: PlaybackException) {
+                val track = mutableState.value.currentTrack
+                if (!retriedCurrentTrack && track != null) {
+                    retriedCurrentTrack = true
+                    val vid = track.youtubeId.ifBlank { track.id }
+                    MusicApplication.instance.innerTubeService.invalidateStream(vid)
+                    playTrack(track, mutableState.value.queue, preserveRetryFlag = true)
+                    return
+                }
+
                 mutableState.update {
                     it.copy(
                         isPlaying = false,
                         isBuffering = false,
-                        errorMessage = "Playback error: ${error.message ?: "Unable to stream track"}"
+                        errorMessage = "Playback failed (${error.errorCodeName}): ${error.message ?: "Unable to stream track"}"
                     )
                 }
             }
         })
     }
 
-    fun playTrack(track: MusicTrack, queueList: List<MusicTrack>? = null) {
-        val currentQueue = queueList ?: if (mutableState.value.queue.any { it.id == track.id }) {
+    fun playTrack(
+        track: MusicTrack,
+        queueList: List<MusicTrack>? = null,
+        preserveRetryFlag: Boolean = false
+    ) {
+        if (!preserveRetryFlag) {
+            retriedCurrentTrack = false
+        }
+        loadTrackJob?.cancel()
+
+        val incomingQueue = queueList ?: if (mutableState.value.queue.any { it.id == track.id }) {
             mutableState.value.queue
         } else {
             mutableState.value.queue + track
         }
-        val trackIdx = currentQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+
+        if (queueList != null) {
+            originalQueue = queueList
+        } else if (originalQueue.none { it.id == track.id }) {
+            originalQueue = originalQueue + track
+        }
+
+        val effectiveQueue = if (mutableState.value.isShuffled && queueList != null && queueList.size > 1) {
+            val rest = queueList.filter { it.id != track.id }.shuffled()
+            listOf(track) + rest
+        } else {
+            incomingQueue
+        }
+
+        val trackIdx = effectiveQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
         mutableState.update {
             it.copy(
                 currentTrack = track,
-                queue = currentQueue,
+                queue = effectiveQueue,
                 queueIndex = trackIdx,
                 isBuffering = true,
                 errorMessage = null,
@@ -103,21 +157,21 @@ class ExoPlaybackManager(context: Context) {
             )
         }
 
+        val metadata = buildMediaMetadata(track)
         val localFile = MusicApplication.instance.getLocalTrackFile(track.id)
         if (localFile != null && localFile.exists()) {
             val playbackUri = Uri.fromFile(localFile)
             val mediaItem = MediaItem.Builder()
                 .setUri(playbackUri)
                 .setMediaId(track.id)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(track.title)
-                        .setArtist(track.artist)
-                        .setAlbumTitle(track.album)
-                        .build()
-                )
+                .setMediaMetadata(metadata)
                 .build()
 
+            player.repeatMode = if (mutableState.value.repeatMode == RepeatMode.ONE) {
+                Player.REPEAT_MODE_ONE
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
@@ -133,25 +187,35 @@ class ExoPlaybackManager(context: Context) {
             return
         }
 
-        // Extract signed stream URLs from the player endpoint and feed into ExoPlayer
-        scope.launch {
+        loadTrackJob = scope.launch {
             try {
                 val videoId = track.youtubeId.ifBlank { track.id }
-                val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(videoId)
-                val streamUri = Uri.parse(streamInfo.streamUrl)
+                val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(
+                    videoId = videoId,
+                    allowFallback = false
+                )
 
+                val headerMap = streamInfo.headers
+                val ua = headerMap.entries
+                    .firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }
+                    ?.value
+                    ?: DEFAULT_USER_AGENT
+                httpDataSourceFactory.setUserAgent(ua)
+                val extraHeaders = headerMap.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
+                httpDataSourceFactory.setDefaultRequestProperties(extraHeaders)
+
+                val streamUri = Uri.parse(streamInfo.streamUrl)
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUri)
                     .setMediaId(track.id)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .setArtist(track.artist)
-                            .setAlbumTitle(track.album)
-                            .build()
-                    )
+                    .setMediaMetadata(metadata)
                     .build()
 
+                player.repeatMode = if (mutableState.value.repeatMode == RepeatMode.ONE) {
+                    Player.REPEAT_MODE_ONE
+                } else {
+                    Player.REPEAT_MODE_OFF
+                }
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.play()
@@ -163,38 +227,48 @@ class ExoPlaybackManager(context: Context) {
                         streamBitrate = streamInfo.bitrate,
                         streamMimeType = streamInfo.mimeType,
                         isSignedStream = streamInfo.isSigned,
-                        isBuffering = false
+                        errorMessage = null
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                // Resilient fallback to track.streamUrl
-                val fallbackUri = Uri.parse(
-                    if (track.streamUrl.isNotBlank()) track.streamUrl
-                    else "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
-                )
-                val mediaItem = MediaItem.Builder()
-                    .setUri(fallbackUri)
-                    .setMediaId(track.id)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .setArtist(track.artist)
-                            .setAlbumTitle(track.album)
-                            .build()
-                    )
-                    .build()
-
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
                 mutableState.update {
                     it.copy(
-                        streamSource = "Licensed Stream Fallback",
-                        isSignedStream = true,
-                        isBuffering = false
+                        isPlaying = false,
+                        isBuffering = false,
+                        streamSource = "Stream Extraction Failed",
+                        errorMessage = e.message ?: "Unable to fetch playable audio stream."
                     )
                 }
             }
+        }
+    }
+
+    private fun buildMediaMetadata(track: MusicTrack): MediaMetadata {
+        val builder = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+        val thumb = track.resolvedThumbnailUrl
+        if (thumb.isNotBlank()) {
+            builder.setArtworkUri(Uri.parse(thumb))
+        }
+        return builder.build()
+    }
+
+    fun retryCurrentTrack() {
+        val track = mutableState.value.currentTrack ?: return
+        val vid = track.youtubeId.ifBlank { track.id }
+        MusicApplication.instance.innerTubeService.invalidateStream(vid)
+        retriedCurrentTrack = false
+        playTrack(track, mutableState.value.queue)
+    }
+
+    fun playFromQueue(index: Int) {
+        val q = mutableState.value.queue
+        if (index in q.indices) {
+            playTrack(q[index], q)
         }
     }
 
@@ -203,20 +277,30 @@ class ExoPlaybackManager(context: Context) {
             player.pause()
         } else if (player.mediaItemCount > 0) {
             player.play()
+        } else {
+            retryCurrentTrack()
         }
     }
 
     fun seekTo(positionMs: Long) {
-        val clamped = positionMs.coerceIn(0L, player.duration.coerceAtLeast(0L))
-        player.seekTo(clamped)
+        val maxDur = if (player.duration > 0) player.duration else mutableState.value.durationMs
+        val clamped = positionMs.coerceIn(0L, maxDur.coerceAtLeast(0L))
+        if (player.mediaItemCount > 0) {
+            player.seekTo(clamped)
+        }
         mutableState.update { it.copy(currentPositionMs = clamped) }
     }
 
     fun next() {
         val q = mutableState.value.queue
         if (q.isEmpty()) return
+        if (q.size == 1 && mutableState.value.repeatMode == RepeatMode.ALL) {
+            seekTo(0L)
+            player.play()
+            return
+        }
         val nextIdx = (mutableState.value.queueIndex + 1) % q.size
-        playTrack(q[nextIdx], q)
+        playTrack(q[nextIdx])
     }
 
     fun prev() {
@@ -227,7 +311,7 @@ class ExoPlaybackManager(context: Context) {
             return
         }
         val prevIdx = (mutableState.value.queueIndex - 1 + q.size) % q.size
-        playTrack(q[prevIdx], q)
+        playTrack(q[prevIdx])
     }
 
     fun toggleRepeat() {
@@ -236,25 +320,46 @@ class ExoPlaybackManager(context: Context) {
             RepeatMode.ALL -> RepeatMode.ONE
             RepeatMode.ONE -> RepeatMode.OFF
         }
+        player.repeatMode = if (nextMode == RepeatMode.ONE) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
         mutableState.update { it.copy(repeatMode = nextMode) }
     }
 
     fun toggleShuffle() {
-        val isShuffled = !mutableState.value.isShuffled
+        val enableShuffle = !mutableState.value.isShuffled
         val curTrack = mutableState.value.currentTrack
         val currentQueue = mutableState.value.queue
-        val newQueue = if (isShuffled) {
+
+        if (enableShuffle) {
+            if (originalQueue.isEmpty() || originalQueue.size < currentQueue.size) {
+                originalQueue = currentQueue
+            }
             val rest = currentQueue.filter { it.id != curTrack?.id }.shuffled()
-            if (curTrack != null) listOf(curTrack) + rest else rest
+            val shuffledQueue = if (curTrack != null) listOf(curTrack) + rest else rest
+            mutableState.update {
+                it.copy(
+                    isShuffled = true,
+                    queue = shuffledQueue,
+                    queueIndex = if (curTrack != null) 0 else -1
+                )
+            }
         } else {
-            currentQueue
-        }
-        mutableState.update {
-            it.copy(
-                isShuffled = isShuffled,
-                queue = newQueue,
-                queueIndex = newQueue.indexOfFirst { t -> t.id == curTrack?.id }.coerceAtLeast(0)
-            )
+            val restored = if (originalQueue.isNotEmpty()) originalQueue else currentQueue
+            val restoredIdx = if (curTrack != null) {
+                restored.indexOfFirst { it.id == curTrack.id }.coerceAtLeast(0)
+            } else {
+                -1
+            }
+            mutableState.update {
+                it.copy(
+                    isShuffled = false,
+                    queue = restored,
+                    queueIndex = restoredIdx
+                )
+            }
         }
     }
 
@@ -290,9 +395,12 @@ class ExoPlaybackManager(context: Context) {
                 next()
             }
             RepeatMode.OFF -> {
-                if (mutableState.value.queueIndex < mutableState.value.queue.size - 1) {
+                val q = mutableState.value.queue
+                if (mutableState.value.queueIndex in 0 until q.lastIndex) {
                     next()
                 } else {
+                    player.pause()
+                    player.seekTo(0L)
                     mutableState.update { it.copy(isPlaying = false, currentPositionMs = 0L) }
                 }
             }
@@ -322,8 +430,14 @@ class ExoPlaybackManager(context: Context) {
     }
 
     fun release() {
+        loadTrackJob?.cancel()
         stopProgressTracker()
         sleepTimerJob?.cancel()
         player.release()
+    }
+
+    companion object {
+        private const val DEFAULT_USER_AGENT =
+            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L) gzip"
     }
 }

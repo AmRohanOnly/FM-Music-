@@ -80,7 +80,7 @@ class MusicAppTest {
     fun testExtractPlayerStreamReturnsSignedStreamUrl() = runBlocking {
         val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
         try {
-            val streamInfo = service.extractPlayerStream("ElZfdU54Cp8")
+            val streamInfo = service.extractPlayerStream("ElZfdU54Cp8", allowFallback = true)
             assertNotNull("Expected non-null streamInfo", streamInfo)
             assertTrue("Expected streamUrl to be populated", streamInfo.streamUrl.isNotBlank())
             assertTrue("Expected stream to be marked signed", streamInfo.isSigned)
@@ -89,6 +89,22 @@ class MusicAppTest {
         } finally {
             service.close()
         }
+    }
+
+    @Test
+    fun testTrackThumbnailResolutionFallback() {
+        val curated = MusicCatalogData.curatedTracks.first()
+        assertTrue(curated.resolvedThumbnailUrl.startsWith("https://"))
+
+        val protocolRelative = MusicTrack(
+            id = "id1",
+            title = "Song",
+            artist = "Artist",
+            youtubeId = "JGwWNGJdvx8",
+            thumbnailUrl = "//lh3.googleusercontent.com/abc=w60-h60"
+        )
+        assertTrue(protocolRelative.resolvedThumbnailUrl.startsWith("https://"))
+        assertTrue(protocolRelative.resolvedThumbnailUrl.contains("w544-h544"))
     }
 
     @Test

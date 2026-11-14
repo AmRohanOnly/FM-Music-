@@ -20,6 +20,25 @@ data class MusicTrack(
             val secs = durationSeconds % 60
             return "%d:%02d".format(mins, secs)
         }
+
+    val resolvedThumbnailUrl: String
+        get() {
+            val raw = thumbnailUrl.trim()
+            val normalized = when {
+                raw.startsWith("//") -> "https:$raw"
+                raw.startsWith("http://") -> "https://" + raw.removePrefix("http://")
+                else -> raw
+            }.replace(Regex("=w\\d+-h\\d+[^\"&\\s]*"), "=w544-h544-l90-rj")
+
+            if (normalized.startsWith("https://")) return normalized
+
+            val vid = youtubeId.ifBlank { id }.trim()
+            return if (vid.isNotBlank() && !vid.contains("-") && !vid.startsWith("dyn")) {
+                "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+            } else {
+                ""
+            }
+        }
 }
 
 enum class RepeatMode {

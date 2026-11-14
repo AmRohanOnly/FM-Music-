@@ -13,7 +13,7 @@ val updateManifestUrl = (project.findProperty("FM_UPDATE_MANIFEST_URL")?.toStrin
 
 android {
     namespace = "com.fmmusic.client"
-    compileSdk = 35
+    compileSdk = 37
     buildToolsVersion = "35.0.0"
 
     defaultConfig {

@@ -44,6 +44,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -143,6 +145,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     val favorites by MusicApplication.instance.favorites.collectAsState()
     val downloads by MusicApplication.instance.downloads.collectAsState()
     val downloading by MusicApplication.instance.downloading.collectAsState()
+    val downloadError by MusicApplication.instance.downloadError.collectAsState()
     val visitorSession by MusicApplication.instance.innerTubeService.sessionState.collectAsState()
 
     var sectionMode by remember { mutableStateOf(MainSectionMode.ONLINE) }
@@ -164,22 +167,26 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
 
     var searchResults by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(searchQuery) {
+        searchError = null
+        searchResults = emptyList()
         val trimmed = searchQuery.trim()
-        if (trimmed.isNotBlank()) {
-            isSearching = true
-            searchResults = MusicCatalogData.search(trimmed)
-            try {
-                val remoteResults = MusicApplication.instance.innerTubeService.searchTracks(trimmed)
-                if (remoteResults.isNotEmpty()) {
-                    searchResults = remoteResults
-                }
-            } catch (_: Exception) {}
+        if (trimmed.isBlank()) {
             isSearching = false
         } else {
-            searchResults = emptyList()
-            isSearching = false
+            isSearching = true
+            try {
+                delay(350)
+                searchResults = MusicApplication.instance.innerTubeService.searchTracks(trimmed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                searchError = "Search unavailable. Check your connection and try again."
+            } finally {
+                isSearching = false
+            }
         }
     }
 
@@ -190,7 +197,16 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
     Scaffold(
         containerColor = Ink,
         bottomBar = {
-            if (playbackState.hasMedia) {
+            Column {
+                playbackState.errorMessage?.let { message ->
+                    Surface(color = PanelSecondary) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(message, color = Color.White, modifier = Modifier.weight(1f), fontSize = 12.sp)
+                            TextButton(onClick = playbackManager::retry) { Text("Retry", color = Accent) }
+                        }
+                    }
+                }
+                if (playbackState.hasMedia) {
                 MiniPlayerBar(
                     state = playbackState,
                     onTogglePlay = playbackManager::togglePlayPause,
@@ -198,6 +214,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                     onPrev = playbackManager::prev,
                     onExpand = { showNowPlayingSheet = true }
                 )
+                }
             }
         }
     ) { paddingValues ->
@@ -208,6 +225,8 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
+            searchError?.let { Text(it, color = Color(0xFFFFB4AB), modifier = Modifier.padding(bottom = 8.dp)) }
+            downloadError?.let { Text(it, color = Color(0xFFFFB4AB), modifier = Modifier.padding(bottom = 8.dp)) }
             // Header Bar
             Row(
                 modifier = Modifier.fillMaxWidth(),

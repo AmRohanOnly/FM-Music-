@@ -4,6 +4,9 @@ import android.app.Application
 import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.network.InnerTubeClientService
 import com.fmmusic.client.playback.ExoPlaybackManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,6 +36,8 @@ class MusicApplication : Application() {
 
     private val mutableDownloading = MutableStateFlow<Set<String>>(emptySet())
     val downloading = mutableDownloading.asStateFlow()
+    private val mutableDownloadError = MutableStateFlow<String?>(null)
+    val downloadError = mutableDownloadError.asStateFlow()
 
     override fun onCreate() {
         super.onCreate()
@@ -47,7 +52,7 @@ class MusicApplication : Application() {
             val downloadDir = getDownloadDir()
             val files = downloadDir.listFiles() ?: return
             val downloadedIds = files
-                .filter { it.isFile && it.length() > 0 }
+                .filter { it.isFile && it.extension == "mp3" && it.length() > 1024 }
                 .map { it.name.substringBeforeLast(".") }
                 .toSet()
             mutableDownloads.value = downloadedIds
@@ -64,7 +69,7 @@ class MusicApplication : Application() {
 
     fun getLocalTrackFile(trackId: String): File? {
         val file = File(getDownloadDir(), "$trackId.mp3")
-        return if (file.exists() && file.length() > 0) file else null
+        return if (file.exists() && file.length() > 1024) file else null
     }
 
     fun toggleFavorite(trackId: String) {
@@ -94,49 +99,43 @@ class MusicApplication : Application() {
 
         mutableDownloading.update { it + trackId }
 
+        mutableDownloadError.value = null
         appScope.launch {
+            val targetFile = File(getDownloadDir(), "$trackId.mp3")
+            val partial = File(getDownloadDir(), "$trackId.part")
+            var connection: HttpURLConnection? = null
             try {
-                val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                val streamUrlToDownload = if (track.streamUrl.startsWith("http") && track.streamUrl.contains("sig=")) {
-                    track.streamUrl
-                } else {
-                    try {
-                        innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id }).streamUrl
-                    } catch (_: Exception) {
-                        track.streamUrl.ifBlank { "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3" }
-                    }
-                }
-                val url = URL(streamUrlToDownload)
-                val connection = url.openConnection() as HttpURLConnection
+                val stream = innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id })
+                check(stream.mimeType.startsWith("audio/")) { "Offline saving is not supported for this stream." }
+                connection = URL(stream.streamUrl).openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
-                connection.instanceFollowRedirects = true
+                stream.headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
                 connection.connect()
-
-                if (connection.responseCode in 200..299) {
-                    connection.inputStream.use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output)
+                check(connection.responseCode in 200..299) { "Audio download failed." }
+                connection.inputStream.use { input ->
+                    FileOutputStream(partial).use { output ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
                         }
                     }
-                    if (targetFile.exists() && targetFile.length() > 0) {
-                        mutableDownloads.update { it + trackId }
-                    }
-                } else {
-                    if (!targetFile.exists() || targetFile.length() == 0L) {
-                        targetFile.writeBytes(ByteArray(1024))
-                        mutableDownloads.update { it + trackId }
-                    }
                 }
+                check(partial.length() > 1024) { "Downloaded audio is empty." }
+                val expected = connection.contentLengthLong
+                check(expected < 0 || partial.length() == expected) { "Audio download was incomplete." }
+                check(partial.renameTo(targetFile)) { "Unable to save audio." }
+                mutableDownloads.update { it + trackId }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
-                val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                if (!targetFile.exists() || targetFile.length() == 0L) {
-                    try {
-                        targetFile.writeBytes(ByteArray(1024))
-                        mutableDownloads.update { it + trackId }
-                    } catch (_: Exception) {}
-                }
+                mutableDownloadError.value = "Download failed. Check your connection or try another track."
             } finally {
+                partial.delete()
+                connection?.disconnect()
                 mutableDownloading.update { it - trackId }
             }
         }

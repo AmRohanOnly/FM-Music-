@@ -8,6 +8,14 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import com.fmmusic.client.MusicApplication
 import com.fmmusic.client.model.MusicTrack
 import com.fmmusic.client.model.PlaybackUiState
@@ -38,6 +46,7 @@ class ExoPlaybackManager(context: Context) {
     private val mutableState = MutableStateFlow(PlaybackUiState())
     val state = mutableState.asStateFlow()
 
+    private var resolutionJob: Job? = null
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
 
@@ -68,11 +77,14 @@ class ExoPlaybackManager(context: Context) {
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                mutableState.value.currentTrack?.let {
+                    MusicApplication.instance.innerTubeService.invalidateStream(it.youtubeId.ifBlank { it.id })
+                }
                 mutableState.update {
                     it.copy(
                         isPlaying = false,
                         isBuffering = false,
-                        errorMessage = "Playback error: ${error.message ?: "Unable to stream track"}"
+                        errorMessage = "Audio could not play (${error.errorCodeName}). Check your connection and tap Retry."
                     )
                 }
             }
@@ -80,6 +92,9 @@ class ExoPlaybackManager(context: Context) {
     }
 
     fun playTrack(track: MusicTrack, queueList: List<MusicTrack>? = null) {
+        resolutionJob?.cancel()
+        player.stop()
+        player.clearMediaItems()
         val currentQueue = queueList ?: if (mutableState.value.queue.any { it.id == track.id }) {
             mutableState.value.queue
         } else {
@@ -90,6 +105,7 @@ class ExoPlaybackManager(context: Context) {
         mutableState.update {
             it.copy(
                 currentTrack = track,
+                isPlaying = false,
                 queue = currentQueue,
                 queueIndex = trackIdx,
                 isBuffering = true,
@@ -130,14 +146,16 @@ class ExoPlaybackManager(context: Context) {
         }
 
         // Extract signed stream URLs from the player endpoint and feed into ExoPlayer
-        scope.launch {
+        resolutionJob = scope.launch {
             try {
                 val videoId = track.youtubeId.ifBlank { track.id }
                 val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(videoId)
+                coroutineContext.ensureActive()
                 val streamUri = Uri.parse(streamInfo.streamUrl)
 
                 val mediaItem = MediaItem.Builder()
                     .setUri(streamUri)
+                    .setMimeType(streamInfo.mimeType.substringBefore(';'))
                     .setMediaId(track.id)
                     .setMediaMetadata(
                         MediaMetadata.Builder()
@@ -148,7 +166,14 @@ class ExoPlaybackManager(context: Context) {
                     )
                     .build()
 
-                player.setMediaItem(mediaItem)
+                val http = DefaultHttpDataSource.Factory()
+                    .setDefaultRequestProperties(streamInfo.headers)
+                    .setConnectTimeoutMs(15_000)
+                    .setReadTimeoutMs(20_000)
+                val source = DefaultMediaSourceFactory(
+                    DefaultDataSource.Factory(MusicApplication.instance, http)
+                ).createMediaSource(mediaItem)
+                player.setMediaSource(source)
                 player.prepare()
                 player.play()
 
@@ -162,39 +187,32 @@ class ExoPlaybackManager(context: Context) {
                         isBuffering = false
                     )
                 }
-            } catch (e: Exception) {
-                // Resilient fallback to track.streamUrl
-                val fallbackUri = Uri.parse(
-                    if (track.streamUrl.isNotBlank()) track.streamUrl
-                    else "https://cdn.freesound.org/previews/682/682054_11861866-lq.mp3"
-                )
-                val mediaItem = MediaItem.Builder()
-                    .setUri(fallbackUri)
-                    .setMediaId(track.id)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(track.title)
-                            .setArtist(track.artist)
-                            .setAlbumTitle(track.album)
-                            .build()
-                    )
-                    .build()
-
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
-                mutableState.update {
-                    it.copy(
-                        streamSource = "Licensed Stream Fallback",
-                        isSignedStream = true,
-                        isBuffering = false
-                    )
-                }
+            } catch (e: TimeoutCancellationException) {
+                showResolutionError("Audio lookup timed out. Check your connection and tap Retry.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                showResolutionError("No playable audio is available. This track may be unavailable or restricted. Try another track or tap Retry.")
             }
         }
     }
 
+    private fun showResolutionError(message: String) {
+        mutableState.update { it.copy(isPlaying = false, isBuffering = false, errorMessage = message) }
+    }
+
+    fun retry() {
+        mutableState.value.currentTrack?.let { track ->
+            MusicApplication.instance.innerTubeService.invalidateStream(track.youtubeId.ifBlank { track.id })
+            playTrack(track)
+        }
+    }
+
     fun togglePlayPause() {
+        if (mutableState.value.errorMessage != null) {
+            retry()
+            return
+        }
         if (player.isPlaying) {
             player.pause()
         } else if (player.mediaItemCount > 0) {
@@ -320,6 +338,7 @@ class ExoPlaybackManager(context: Context) {
     fun release() {
         stopProgressTracker()
         sleepTimerJob?.cancel()
+        scope.cancel()
         player.release()
     }
 }

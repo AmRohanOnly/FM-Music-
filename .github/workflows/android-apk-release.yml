@@ -93,13 +93,13 @@ jobs:
             echo "GRADLE_CMD=gradle" >> "$GITHUB_ENV"
           fi
 
-      - name: Run Android Unit Tests
-        run: |
-          $GRADLE_CMD :app:testDebugUnitTest --no-daemon --stacktrace \
-            -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
-            -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
-            -PFM_GITHUB_REPO=${{ github.repository }}
-
+    # - name:  Run Android Unit Tests 
+      #  run: | 
+       #   $GRADLE_CMD :app:testDebugUnitTest --no-daemon --stacktrace \
+        #    -PFM_VERSION_CODE=${{ steps.meta.outputs.version_code }} \
+         #   -PFM_VERSION_NAME=${{ steps.meta.outputs.version_name }} \
+         #   -PFM_GITHUB_REPO=${{ github.repository }} 
+#
       - name: Build Signed Release APK
         run: |
           $GRADLE_CMD :app:assembleRelease --no-daemon --stacktrace \

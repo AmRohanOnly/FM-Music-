@@ -42,7 +42,7 @@ data class ReleaseUpdateInfo(
 }
 
 data class AppUpdateUiState(
-    val currentVersionName: String = BuildConfig.VERSION_NAME,
+    val currentVersionName: String = CURRENT_APP_VERSION,
     val currentVersionCode: Int = BuildConfig.VERSION_CODE,
     val githubRepo: String = "",
     val isChecking: Boolean = false,
@@ -162,7 +162,7 @@ class AppUpdateManager(
                 val isNewer = isNewerVersion(
                     remoteVersionName = release.versionName,
                     remoteVersionCode = release.versionCode,
-                    currentVersionName = BuildConfig.VERSION_NAME,
+                    currentVersionName = CURRENT_APP_VERSION,
                     currentVersionCode = BuildConfig.VERSION_CODE
                 )
 
@@ -185,7 +185,7 @@ class AppUpdateManager(
                             availableUpdate = null,
                             showPromptDialog = false,
                             upToDateMessage = if (forceManual) {
-                                "You are on the latest version (v${BuildConfig.VERSION_NAME})."
+                                "You are on the latest version (v$CURRENT_APP_VERSION)."
                             } else null
                         )
                     }
@@ -241,7 +241,7 @@ class AppUpdateManager(
                         readTimeout = 30000
                         instanceFollowRedirects = true
                         setRequestProperty("Accept", "application/octet-stream")
-                        setRequestProperty("User-Agent", "FM-Music-Android/${BuildConfig.VERSION_NAME}")
+                        setRequestProperty("User-Agent", "FM-Music-Android/$CURRENT_APP_VERSION")
                     }
                     conn.connect()
 
@@ -362,7 +362,7 @@ class AppUpdateManager(
             connectTimeout = 10000
             readTimeout = 10000
             setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "FM-Music-Android/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", "FM-Music-Android/$CURRENT_APP_VERSION")
         }
         conn.connect()
 
@@ -459,7 +459,7 @@ class AppUpdateManager(
             readTimeout = 10000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "FM-Music-Android/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", "FM-Music-Android/$CURRENT_APP_VERSION")
         }
         conn.connect()
 
@@ -503,6 +503,8 @@ class AppUpdateManager(
     }
 
     companion object {
+        const val CURRENT_APP_VERSION = BuildConfig.VERSION_NAME
+
         private const val PREFS_NAME = "fm_music_prefs"
         private const val KEY_GITHUB_REPO = "github_repo_slug"
         private const val KEY_SKIPPED_TAG = "skipped_update_tag"

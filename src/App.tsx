@@ -90,11 +90,13 @@ import {
   AppUpdateCheckResult,
   CURRENT_APP_VERSION,
   checkAppUpdate,
+  fetchDefaultUpdateRepo,
   formatApkSize,
   loadSkippedReleaseTag,
   loadStoredGithubRepo,
   saveSkippedReleaseTag,
   saveStoredGithubRepo,
+  shouldRunAutoUpdateCheck,
 } from './services/appUpdateService';
 
 interface GreetingInfo {
@@ -620,25 +622,59 @@ export default function App() {
       })
       .catch(() => {});
 
-    const storedRepo = loadStoredGithubRepo();
-    if (storedRepo) {
-      checkAppUpdate(storedRepo, CURRENT_APP_VERSION)
-        .then((res) => {
-          setUpdateCheckResult(res);
-          const skippedTag = loadSkippedReleaseTag();
-          if (res.updateAvailable && res.tagName && res.tagName !== skippedTag) {
-            setShowUpdatePromptModal(true);
-          }
-        })
-        .catch(() => {});
-    }
+    let isUnmounted = false;
+
+    const runAutoUpdateCheck = async (respectCooldown = true) => {
+      if (respectCooldown && !shouldRunAutoUpdateCheck()) return;
+
+      let targetRepo = loadStoredGithubRepo();
+      if (!targetRepo) {
+        const serverDefaultRepo = await fetchDefaultUpdateRepo();
+        if (isUnmounted) return;
+        if (serverDefaultRepo) {
+          targetRepo = serverDefaultRepo;
+          saveStoredGithubRepo(serverDefaultRepo);
+          setGithubRepo(serverDefaultRepo);
+        }
+      }
+
+      if (!targetRepo) return;
+
+      try {
+        const res = await checkAppUpdate(targetRepo, CURRENT_APP_VERSION);
+        if (isUnmounted) return;
+        setUpdateCheckResult(res);
+        const skippedTag = loadSkippedReleaseTag();
+        if (res.updateAvailable && (res.mandatory || (res.tagName && res.tagName !== skippedTag))) {
+          setShowUpdatePromptModal(true);
+        }
+      } catch {
+        // Silent failure for background auto-checks
+      }
+    };
+
+    void runAutoUpdateCheck(true);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void runAutoUpdateCheck(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const autoUpdateTimer = setInterval(() => {
+      void runAutoUpdateCheck(true);
+    }, 30 * 60 * 1000);
 
     const timer = setInterval(() => {
       setGreetingInfo(getTimeBasedGreeting());
     }, 60000);
 
     return () => {
+      isUnmounted = true;
       unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(autoUpdateTimer);
       clearInterval(timer);
       if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
     };

@@ -703,9 +703,20 @@ async function startServer() {
     });
   });
 
+  // 6c. Automated Update Config Endpoint
+  app.get('/api/app-update/config', (_req, res) => {
+    const defaultRepo = String(process.env.GITHUB_REPO || process.env.VITE_GITHUB_REPO || '').trim();
+    return res.json({
+      defaultRepo,
+      currentVersion: '1.0.0',
+    });
+  });
+
   // 7. GitHub Releases / Packages & Direct Manifest Auto-Update Check Endpoint
   app.get('/api/app-update', async (req, res) => {
-    const rawRepo = String(req.query.repo || '').trim();
+    const rawRepo = String(
+      req.query.repo || process.env.GITHUB_REPO || process.env.VITE_GITHUB_REPO || ''
+    ).trim();
     const currentVersion = String(req.query.currentVersion || '1.0.0').trim() || '1.0.0';
 
     const compareVersions = (remote: string, current: string): number => {

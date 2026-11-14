@@ -129,17 +129,13 @@ class MusicApplication : Application() {
                         mutableDownloads.update { it + trackId }
                     }
                 } else {
-                    if (!targetFile.exists() || targetFile.length() == 0L) {
-                        targetFile.writeBytes(ByteArray(1024))
-                        mutableDownloads.update { it + trackId }
-                    }
+                    if (targetFile.exists()) targetFile.delete()
                 }
             } catch (_: Exception) {
                 val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                if (!targetFile.exists() || targetFile.length() == 0L) {
+                if (targetFile.exists() && targetFile.length() == 0L) {
                     try {
-                        targetFile.writeBytes(ByteArray(1024))
-                        mutableDownloads.update { it + trackId }
+                        targetFile.delete()
                     } catch (_: Exception) {}
                 }
             } finally {

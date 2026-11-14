@@ -33,6 +33,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 data class VisitorSessionState(
     val isInitialized: Boolean = false,
@@ -66,6 +67,13 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     }
 
     private val httpClient = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectTimeout(6, TimeUnit.SECONDS)
+                readTimeout(8, TimeUnit.SECONDS)
+                callTimeout(10, TimeUnit.SECONDS)
+            }
+        }
         install(ContentNegotiation) {
             json(json)
         }
@@ -311,38 +319,48 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
 
         val visitorToken = mutableVisitorData.value ?: mutableSessionState.value.visitorData
 
-        // 1. Attempt YouTube Music player endpoint
-        try {
-            val payload = buildJsonObject {
-                put("context", buildJsonObject {
-                    put("client", buildJsonObject {
-                        put("clientName", "WEB_REMIX")
-                        put("clientVersion", "1.20240101.01.00")
-                        put("hl", "en")
-                        put("gl", "US")
-                        if (!visitorToken.isNullOrBlank()) {
-                            put("visitorData", visitorToken)
-                        }
-                    })
-                })
-                put("videoId", cleanId)
-            }.toString()
+        // 1. Try InnerTube player clients that return direct playable audio URLs without JS cipher
+        val clientProfiles = listOf(
+            Triple("ANDROID_MUSIC", "7.29.52", "com.google.android.apps.youtube.music/7.29.52 (Linux; U; Android 14)"),
+            Triple("ANDROID_VR", "1.60.19", "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L)"),
+            Triple("IOS", "20.10.4", "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3 like Mac OS X)"),
+            Triple("WEB_REMIX", "1.20240101.01.00", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+        )
 
-            val response = httpClient.post("https://music.youtube.com/youtubei/v1/player") {
-                contentType(ContentType.Application.Json)
-                if (!visitorToken.isNullOrBlank()) {
-                    header("X-Goog-Visitor-Id", visitorToken)
+        for ((cName, cVersion, ua) in clientProfiles) {
+            try {
+                val payload = buildJsonObject {
+                    put("context", buildJsonObject {
+                        put("client", buildJsonObject {
+                            put("clientName", cName)
+                            put("clientVersion", cVersion)
+                            put("hl", "en")
+                            put("gl", "US")
+                            if (!visitorToken.isNullOrBlank()) {
+                                put("visitorData", visitorToken)
+                            }
+                        })
+                    })
+                    put("videoId", cleanId)
+                }.toString()
+
+                val response = httpClient.post("https://music.youtube.com/youtubei/v1/player?prettyPrint=false") {
+                    contentType(ContentType.Application.Json)
+                    header("User-Agent", ua)
+                    if (!visitorToken.isNullOrBlank()) {
+                        header("X-Goog-Visitor-Id", visitorToken)
+                    }
+                    setBody(payload)
                 }
-                setBody(payload)
+                val text = response.bodyAsText()
+                val parsed = parsePlayerResponse(cleanId, text)
+                if (parsed != null) {
+                    streamCache[cleanId] = parsed
+                    return@withContext parsed
+                }
+            } catch (_: Exception) {
+                // Try next InnerTube client profile
             }
-            val text = response.bodyAsText()
-            val parsed = parsePlayerResponse(cleanId, text)
-            if (parsed != null) {
-                streamCache[cleanId] = parsed
-                return@withContext parsed
-            }
-        } catch (_: Exception) {
-            // Fall through to Piped API stream extractor
         }
 
         // 2. Fallback to Piped stream extraction API

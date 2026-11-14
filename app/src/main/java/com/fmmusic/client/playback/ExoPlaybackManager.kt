@@ -25,15 +25,19 @@ import kotlinx.coroutines.launch
 class ExoPlaybackManager(context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main.immediate)
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build().apply {
-        setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(C.USAGE_MEDIA)
-                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                .build(),
-            true
-        )
-    }
+    private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext)
+        .setHandleAudioBecomingNoisy(true)
+        .setWakeMode(C.WAKE_MODE_NETWORK)
+        .build()
+        .apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                true
+            )
+        }
 
     private val mutableState = MutableStateFlow(PlaybackUiState())
     val state = mutableState.asStateFlow()

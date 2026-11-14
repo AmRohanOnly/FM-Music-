@@ -1,5 +1,6 @@
 package com.fmmusic.client.update
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -241,6 +242,7 @@ class AppUpdateManager(
 
                     val totalBytes = conn.contentLengthLong.takeIf { it > 0 } ?: release.apkSizeBytes
                     var downloaded = 0L
+                    var lastReportedPct = -1
 
                     conn.inputStream.use { input ->
                         FileOutputStream(outFile).use { output ->
@@ -252,7 +254,11 @@ class AppUpdateManager(
                                 downloaded += read
                                 if (totalBytes > 0L) {
                                     val progress = (downloaded.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
-                                    mutableState.update { it.copy(downloadProgress = progress) }
+                                    val pct = (progress * 100).toInt()
+                                    if (pct != lastReportedPct) {
+                                        lastReportedPct = pct
+                                        mutableState.update { it.copy(downloadProgress = progress) }
+                                    }
                                 }
                             }
                             output.flush()
@@ -287,37 +293,58 @@ class AppUpdateManager(
     }
 
     fun launchApkInstaller(apkFile: File) {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            mutableState.update {
+                it.copy(errorMessage = "No Android package installer available on this device.")
+            }
         }
-        context.startActivity(intent)
     }
 
     fun openInstallPermissionSettings() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}")
-            ).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: ActivityNotFoundException) {
+                try {
+                    val fallback = Intent(Settings.ACTION_SECURITY_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(fallback)
+                } catch (_: Exception) {}
             }
-            context.startActivity(intent)
         }
     }
 
     fun openInBrowser(url: String) {
         if (url.isBlank()) return
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            mutableState.update {
+                it.copy(errorMessage = "No browser app found to open link.")
+            }
         }
-        context.startActivity(intent)
     }
 
     private fun fetchLatestGithubRelease(repo: String): ReleaseUpdateInfo? {

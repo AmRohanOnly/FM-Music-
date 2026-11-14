@@ -81,6 +81,7 @@ import com.fmmusic.client.model.RepeatMode
 import com.fmmusic.client.playback.ExoPlaybackManager
 import com.fmmusic.client.update.AppUpdateUiState
 import com.fmmusic.client.update.ReleaseUpdateInfo
+import kotlinx.coroutines.delay
 import java.util.Calendar
 
 private val Ink = Color(0xFF111116)
@@ -177,6 +178,7 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
         if (trimmed.isNotBlank()) {
             isSearching = true
             searchResults = MusicCatalogData.search(trimmed)
+            delay(350)
             try {
                 val remoteResults = MusicApplication.instance.innerTubeService.searchTracks(trimmed)
                 if (remoteResults.isNotEmpty()) {
@@ -221,19 +223,24 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FmLogoBadge(size = 40)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    FmLogoBadge(size = 38)
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "FM MUSIC",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 2.sp,
-                                fontSize = 16.sp
+                                letterSpacing = 1.5.sp,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(5.dp))
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
@@ -243,12 +250,15 @@ private fun MusicAppRoot(playbackManager: ExoPlaybackManager) {
                         Text(
                             "IN-APP STREAMING",
                             color = SoftText,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.sp
+                            letterSpacing = 0.8.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -937,7 +947,7 @@ private fun TrackListItem(
             // Download Button
             Surface(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(40.dp)
                     .clickable(onClick = onToggleDownload),
                 shape = CircleShape,
                 color = when {
@@ -960,7 +970,7 @@ private fun TrackListItem(
                             Text(
                                 "✓",
                                 color = Ink,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -968,7 +978,7 @@ private fun TrackListItem(
                             Text(
                                 "↓",
                                 color = SoftText,
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -981,7 +991,7 @@ private fun TrackListItem(
             // Favorite Button
             Surface(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(40.dp)
                     .clickable(onClick = onToggleFavorite),
                 shape = CircleShape,
                 color = if (isFavorite) Accent else PanelSecondary
@@ -990,7 +1000,7 @@ private fun TrackListItem(
                     Text(
                         if (isFavorite) "★" else "☆",
                         color = if (isFavorite) Ink else SoftText,
-                        fontSize = 14.sp
+                        fontSize = 15.sp
                     )
                 }
             }

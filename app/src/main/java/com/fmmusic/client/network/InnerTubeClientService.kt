@@ -11,10 +11,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -87,6 +89,8 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     private val mutableVisitorData = MutableStateFlow<String?>(null)
     val visitorData = mutableVisitorData.asStateFlow()
 
+    private var visitorFetchJob: Job? = null
+
     init {
         // Step 1: Initialize an unauthenticated visitor session for InnerTube
         initializeVisitorSession()
@@ -119,9 +123,12 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
         )
         mutableSessionState.value = newState
 
-        scope.launch(Dispatchers.IO) {
+        visitorFetchJob?.cancel()
+        visitorFetchJob = scope.launch(Dispatchers.IO) {
             try {
-                val freshToken = innerTube.fetchFreshVisitorData()
+                val freshToken = withTimeoutOrNull(4000L) {
+                    innerTube.fetchFreshVisitorData()
+                }
                 if (!freshToken.isNullOrBlank()) {
                     mutableVisitorData.value = freshToken
                     innerTube.visitorData = freshToken
@@ -448,7 +455,8 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 val streamObj = streamEl.jsonObject
                 val url = streamObj["url"]?.jsonPrimitive?.content
                 val bitrate = streamObj["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
-                val mime = streamObj["mimeType"]?.jsonPrimitive?.content ?: "audio/mp4"
+                val rawMime = streamObj["mimeType"]?.jsonPrimitive?.content.orEmpty()
+                val mime = if (rawMime.contains("audio", ignoreCase = true)) rawMime else "audio/mp4"
                 if (!url.isNullOrBlank() && bitrate >= bestBitrate) {
                     bestBitrate = bitrate
                     bestUrl = url
@@ -471,8 +479,14 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
     }
 
     fun close() {
+        visitorFetchJob?.cancel()
+        visitorFetchJob = null
         streamCache.clear()
-        innerTube.close()
-        httpClient.close()
+        try {
+            innerTube.close()
+        } catch (_: Exception) {}
+        try {
+            httpClient.close()
+        } catch (_: Exception) {}
     }
 }

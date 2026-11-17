@@ -39,7 +39,8 @@ class ExoPlaybackManager(context: Context) {
         .setReadTimeoutMs(15_000)
         .setAllowCrossProtocolRedirects(true)
 
-    private val dataSourceFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
+    private val upstreamDataSourceFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
+    private val dataSourceFactory = BoundedRangeDataSourceFactory(upstreamDataSourceFactory)
 
     private val player: ExoPlayer = ExoPlayer.Builder(appContext)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -99,7 +100,7 @@ class ExoPlaybackManager(context: Context) {
                     retriedCurrentTrack = true
                     val vid = track.youtubeId.ifBlank { track.id }
                     MusicApplication.instance.innerTubeService.invalidateStream(vid)
-                    playTrack(track, mutableState.value.queue, preserveRetryFlag = true)
+                    playTrack(track, mutableState.value.queue, preserveRetryFlag = true, forceAlternative = true)
                     return
                 }
 
@@ -117,7 +118,8 @@ class ExoPlaybackManager(context: Context) {
     fun playTrack(
         track: MusicTrack,
         queueList: List<MusicTrack>? = null,
-        preserveRetryFlag: Boolean = false
+        preserveRetryFlag: Boolean = false,
+        forceAlternative: Boolean = false
     ) {
         if (!preserveRetryFlag) {
             retriedCurrentTrack = false
@@ -192,7 +194,8 @@ class ExoPlaybackManager(context: Context) {
                 val videoId = track.youtubeId.ifBlank { track.id }
                 val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(
                     videoId = videoId,
-                    allowFallback = false
+                    allowFallback = false,
+                    forceAlternative = forceAlternative
                 )
 
                 val headerMap = streamInfo.headers
@@ -262,7 +265,7 @@ class ExoPlaybackManager(context: Context) {
         val vid = track.youtubeId.ifBlank { track.id }
         MusicApplication.instance.innerTubeService.invalidateStream(vid)
         retriedCurrentTrack = false
-        playTrack(track, mutableState.value.queue)
+        playTrack(track, mutableState.value.queue, forceAlternative = true)
     }
 
     fun playFromQueue(index: Int) {

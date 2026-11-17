@@ -52,6 +52,7 @@ data class PlayerStreamInfo(
     val mimeType: String = "audio/mp4",
     val bitrate: Int = 128000,
     val itag: Int? = null,
+    val contentLength: Long = 0L,
     val expiresInSeconds: Long = 21600L,
     val source: String = "InnerTube Player Endpoint",
     val isSigned: Boolean = true,
@@ -329,11 +330,12 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
      */
     suspend fun extractPlayerStream(
         videoId: String,
-        allowFallback: Boolean = false
+        allowFallback: Boolean = false,
+        forceAlternative: Boolean = false
     ): PlayerStreamInfo = withContext(Dispatchers.IO) {
         val cleanId = videoId.trim()
         val cached = streamCache[cleanId]
-        if (cached != null && !cached.isExpired && cached.streamUrl.startsWith("http")) {
+        if (!forceAlternative && cached != null && !cached.isExpired && cached.streamUrl.startsWith("http")) {
             return@withContext cached
         }
         streamCache.remove(cleanId)
@@ -349,7 +351,14 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             val extraClientFields: Map<String, String> = emptyMap()
         )
 
-        val clientProfiles = listOf(
+        val baseProfiles = listOf(
+            ClientProfile(
+                clientName = "ANDROID",
+                clientVersion = "20.01.35",
+                clientId = "3",
+                userAgent = "com.google.android.youtube/20.01.35 (Linux; U; Android 11) gzip",
+                extraClientFields = mapOf("osName" to "Android", "osVersion" to "11", "androidSdkVersion" to "30")
+            ),
             ClientProfile(
                 clientName = "IOS",
                 clientVersion = "20.10.4",
@@ -363,15 +372,14 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 clientId = "28",
                 userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
                 extraClientFields = mapOf("deviceMake" to "Oculus", "deviceModel" to "Quest 3", "osName" to "Android", "osVersion" to "12L")
-            ),
-            ClientProfile(
-                clientName = "ANDROID_MUSIC",
-                clientVersion = "7.29.52",
-                clientId = "21",
-                userAgent = "com.google.android.apps.youtube.music/7.29.52 (Linux; U; Android 14; en_US; Pixel 8) gzip",
-                extraClientFields = mapOf("osName" to "Android", "osVersion" to "14")
             )
         )
+
+        val clientProfiles = if (forceAlternative && baseProfiles.size > 1) {
+            baseProfiles.drop(1) + baseProfiles.take(1)
+        } else {
+            baseProfiles
+        }
 
         for (profile in clientProfiles) {
             try {
@@ -496,6 +504,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
             var bestBitrate = 0
             var bestMime = "audio/mp4"
             var bestItag: Int? = null
+            var bestContentLength: Long = 0L
 
             for (fmtElement in adaptiveFormats) {
                 val fmt = fmtElement.jsonObject
@@ -504,6 +513,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                     val url = fmt["url"]?.jsonPrimitive?.content
                     if (!url.isNullOrBlank() && url.startsWith("http")) {
                         val bitrate = fmt["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+                        val contentLength = fmt["contentLength"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
                         // Prefer m4a/mp4 slightly for universal Media3 hardware compatibility
                         val containerBonus = if (mime.contains("mp4", ignoreCase = true)) 15000 else 0
                         val score = bitrate + containerBonus
@@ -513,6 +523,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                             bestUrl = url
                             bestMime = mime
                             bestItag = fmt["itag"]?.jsonPrimitive?.content?.toIntOrNull()
+                            bestContentLength = contentLength
                         }
                     }
                 }
@@ -525,6 +536,7 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                     mimeType = bestMime,
                     bitrate = if (bestBitrate > 0) bestBitrate else 128000,
                     itag = bestItag,
+                    contentLength = bestContentLength,
                     expiresInSeconds = expiresIn,
                     source = sourceLabel,
                     isSigned = true,

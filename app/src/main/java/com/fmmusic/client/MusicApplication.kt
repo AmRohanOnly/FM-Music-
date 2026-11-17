@@ -101,35 +101,91 @@ class MusicApplication : Application() {
         mutableDownloading.update { it + trackId }
 
         appScope.launch {
+            val targetFile = File(getDownloadDir(), "$trackId.mp3")
             try {
-                val targetFile = File(getDownloadDir(), "$trackId.mp3")
-                val streamUrlToDownload = if (track.streamUrl.startsWith("http") && track.streamUrl.contains("googlevideo")) {
-                    track.streamUrl
-                } else {
-                    innerTubeService.extractPlayerStream(track.youtubeId.ifBlank { track.id }, allowFallback = false).streamUrl
-                }
-                val url = URL(streamUrlToDownload)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 20000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
-                connection.connect()
+                val streamInfo = innerTubeService.extractPlayerStream(
+                    track.youtubeId.ifBlank { track.id },
+                    allowFallback = false
+                )
+                val streamUrl = streamInfo.streamUrl
+                val isGoogleVideo = streamUrl.contains("googlevideo.com")
+                val userAgent = streamInfo.headers.entries
+                    .firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }
+                    ?.value
+                    ?: "com.google.android.youtube/20.01.35 (Linux; U; Android 11) gzip"
 
-                if (connection.responseCode in 200..299) {
-                    connection.inputStream.use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output)
+                if (!isGoogleVideo) {
+                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 20000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", userAgent)
+                        connect()
+                    }
+                    if (conn.responseCode in 200..299) {
+                        conn.inputStream.use { input ->
+                            FileOutputStream(targetFile).use { output ->
+                                input.copyTo(output)
+                            }
                         }
                     }
-                    if (targetFile.exists() && targetFile.length() > 0) {
-                        mutableDownloads.update { it + trackId }
+                } else {
+                    // Chunked download with 512 KB bounded ranges to satisfy YouTube edge server requirements
+                    val chunkSize = 512 * 1024L
+                    var startByte = 0L
+                    var totalLength = streamInfo.contentLength
+
+                    FileOutputStream(targetFile).use { output ->
+                        var hasMore = true
+                        while (hasMore) {
+                            val endByte = if (totalLength > 0L) {
+                                minOf(startByte + chunkSize - 1, totalLength - 1)
+                            } else {
+                                startByte + chunkSize - 1
+                            }
+
+                            val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 15000
+                                readTimeout = 20000
+                                instanceFollowRedirects = true
+                                setRequestProperty("User-Agent", userAgent)
+                                setRequestProperty("Range", "bytes=$startByte-$endByte")
+                                connect()
+                            }
+
+                            val code = conn.responseCode
+                            if (code in 200..299) {
+                                if (totalLength <= 0L) {
+                                    val cr = conn.getHeaderField("Content-Range")
+                                    if (!cr.isNullOrBlank() && cr.contains("/")) {
+                                        totalLength = cr.substringAfter("/").trim().toLongOrNull() ?: 0L
+                                    }
+                                }
+                                val bytesCopied = conn.inputStream.use { input ->
+                                    input.copyTo(output)
+                                }
+                                if (bytesCopied <= 0) {
+                                    hasMore = false
+                                } else {
+                                    startByte += bytesCopied
+                                    if (totalLength > 0L && startByte >= totalLength) {
+                                        hasMore = false
+                                    }
+                                }
+                            } else {
+                                hasMore = false
+                            }
+                            conn.disconnect()
+                        }
                     }
+                }
+
+                if (targetFile.exists() && targetFile.length() > 0) {
+                    mutableDownloads.update { it + trackId }
                 } else {
                     if (targetFile.exists()) targetFile.delete()
                 }
             } catch (_: Exception) {
-                val targetFile = File(getDownloadDir(), "$trackId.mp3")
                 if (targetFile.exists() && targetFile.length() == 0L) {
                     try {
                         targetFile.delete()

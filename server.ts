@@ -915,7 +915,9 @@ async function startServer() {
     });
   }
 
-  const port = Number(process.env.PORT) || 3000;
+  const portArgIdx = process.argv.indexOf('--port');
+  const cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : NaN;
+  const port = (Number.isFinite(cliPort) && cliPort > 0 ? cliPort : Number(process.env.PORT)) || 3000;
   app.listen(port, '0.0.0.0', () => {
     console.log(`FM Music server listening on http://0.0.0.0:${port}`);
   });

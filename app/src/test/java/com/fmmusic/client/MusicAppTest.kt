@@ -47,6 +47,20 @@ class MusicAppTest {
     }
 
     @Test
+    fun testUserPlaylistDataModel() {
+        val track = MusicCatalogData.curatedTracks.first()
+        val playlist = com.fmmusic.client.model.UserPlaylist(
+            id = "pl-1",
+            name = "My Test Playlist",
+            tracks = listOf(track)
+        )
+        assertEquals("pl-1", playlist.id)
+        assertEquals("My Test Playlist", playlist.name)
+        assertEquals(1, playlist.tracks.size)
+        assertEquals(track.id, playlist.tracks.first().id)
+    }
+
+    @Test
     fun testInnerTubeServiceInitialization() = runBlocking {
         val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
         try {

@@ -45,6 +45,13 @@ enum class RepeatMode {
     OFF, ALL, ONE
 }
 
+data class UserPlaylist(
+    val id: String,
+    val name: String,
+    val tracks: List<MusicTrack> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class PlaybackUiState(
     val currentTrack: MusicTrack? = null,
     val isPlaying: Boolean = false,

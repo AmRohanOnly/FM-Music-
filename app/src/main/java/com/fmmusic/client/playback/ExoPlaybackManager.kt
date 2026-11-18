@@ -203,9 +203,7 @@ class ExoPlaybackManager(context: Context) {
                     .firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }
                     ?.value
                     ?: DEFAULT_USER_AGENT
-                httpDataSourceFactory.setUserAgent(ua)
                 val extraHeaders = headerMap.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
-                httpDataSourceFactory.setDefaultRequestProperties(extraHeaders)
 
                 val streamUri = Uri.parse(streamInfo.streamUrl)
                 val mediaItem = MediaItem.Builder()
@@ -214,12 +212,24 @@ class ExoPlaybackManager(context: Context) {
                     .setMediaMetadata(metadata)
                     .build()
 
+                val trackHttpFactory = DefaultHttpDataSource.Factory()
+                    .setUserAgent(ua)
+                    .setConnectTimeoutMs(12_000)
+                    .setReadTimeoutMs(20_000)
+                    .setAllowCrossProtocolRedirects(true)
+                    .setDefaultRequestProperties(extraHeaders)
+
+                val trackUpstreamFactory = DefaultDataSource.Factory(appContext, trackHttpFactory)
+                val trackDataSourceFactory = BoundedRangeDataSourceFactory(trackUpstreamFactory)
+                val mediaSourceFactory = DefaultMediaSourceFactory(trackDataSourceFactory)
+                val mediaSource = mediaSourceFactory.createMediaSource(mediaItem)
+
                 player.repeatMode = if (mutableState.value.repeatMode == RepeatMode.ONE) {
                     Player.REPEAT_MODE_ONE
                 } else {
                     Player.REPEAT_MODE_OFF
                 }
-                player.setMediaItem(mediaItem)
+                player.setMediaSource(mediaSource)
                 player.prepare()
                 player.play()
 
@@ -331,8 +341,10 @@ class ExoPlaybackManager(context: Context) {
         mutableState.update { it.copy(repeatMode = nextMode) }
     }
 
-    fun toggleShuffle() {
-        val enableShuffle = !mutableState.value.isShuffled
+    fun cycleRepeatMode() = toggleRepeat()
+
+    fun toggleShuffle(forceEnable: Boolean? = null) {
+        val enableShuffle = forceEnable ?: !mutableState.value.isShuffled
         val curTrack = mutableState.value.currentTrack
         val currentQueue = mutableState.value.queue
 
@@ -388,6 +400,8 @@ class ExoPlaybackManager(context: Context) {
         }
     }
 
+    fun cancelSleepTimer() = setSleepTimer(null)
+
     private fun handleTrackEnded() {
         when (mutableState.value.repeatMode) {
             RepeatMode.ONE -> {
@@ -441,6 +455,6 @@ class ExoPlaybackManager(context: Context) {
 
     companion object {
         private const val DEFAULT_USER_AGENT =
-            "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
+            "com.google.android.youtube/20.01.35 (Linux; U; Android 11) gzip"
     }
 }

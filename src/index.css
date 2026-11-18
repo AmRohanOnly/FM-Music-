@@ -4,23 +4,295 @@
 
 @layer base {
   :root {
-    --fm-bg: #09090e;
+    /* ==========================================================================
+       24-Token CSS Variable Design System (FM-Music)
+       Default: YouTube Music Dark Theme (yt-dark)
+       ========================================================================== */
+    
+    /* 1. Canvas & Structural Backgrounds */
+    --fm-bg: #030303;
+    --fm-bg-elevated: #212121;
+    --fm-surface-card: #181818;
+    --fm-surface-hover: #282828;
+    --fm-header-bg: rgba(3, 3, 3, 0.95);
+    --fm-player-bg: #212121;
+
+    /* 2. Typography */
+    --fm-text: #FFFFFF;
+    --fm-text-muted: #AAAAAA;
+
+    /* 3. Accent & Interactive States */
+    --fm-accent: #FF0000;
+    --fm-accent-fg: #FFFFFF;
+    --fm-accent-rgb: 255, 0, 0;
+    --fm-accent-subtle: rgba(255, 0, 0, 0.15);
+    --fm-accent-border: rgba(255, 0, 0, 0.40);
+
+    /* 4. Glassmorphism & Liquid Surfaces */
+    --fm-glass: #212121;
+    --fm-glass-strong: #1F1F1F;
+    --fm-glass-border: rgba(255, 255, 255, 0.10);
+    --fm-glass-highlight: rgba(255, 255, 255, 0.12);
+    --fm-glass-blur: 16px;
+    --fm-glass-sat: 100%;
+    --fm-glass-sheen: 0.5;
+
+    /* 5. Ambient Glow Lighting */
+    --fm-orb-1: rgba(255, 0, 0, 0.08);
+    --fm-orb-2: rgba(255, 60, 60, 0.05);
+    --fm-orb-opacity: 0.4;
+
+    /* 6. Inputs & Navigation Components */
+    --fm-input-bg: #1F1F1F;
+    --fm-chip-bg: #212121;
+    --fm-chip-text: #FFFFFF;
+    --fm-chip-border: rgba(255, 255, 255, 0.12);
+  }
+
+  /* YouTube Music Dark Theme */
+  [data-theme='yt-dark'] {
+    --fm-bg: #030303;
+    --fm-bg-elevated: #212121;
+    --fm-surface-card: #181818;
+    --fm-surface-hover: #282828;
+    --fm-header-bg: rgba(3, 3, 3, 0.95);
+    --fm-player-bg: #212121;
+    --fm-text: #FFFFFF;
+    --fm-text-muted: #AAAAAA;
+    --fm-accent: #FF0000;
+    --fm-accent-fg: #FFFFFF;
+    --fm-accent-rgb: 255, 0, 0;
+    --fm-accent-subtle: rgba(255, 0, 0, 0.15);
+    --fm-accent-border: rgba(255, 0, 0, 0.40);
+    --fm-glass: #212121;
+    --fm-glass-strong: #1F1F1F;
+    --fm-glass-border: rgba(255, 255, 255, 0.10);
+    --fm-glass-highlight: rgba(255, 255, 255, 0.12);
+    --fm-glass-blur: 14px;
+    --fm-glass-sat: 100%;
+    --fm-glass-sheen: 0.5;
+    --fm-orb-1: rgba(255, 0, 0, 0.08);
+    --fm-orb-2: rgba(255, 60, 60, 0.05);
+    --fm-orb-opacity: 0.35;
+    --fm-input-bg: #1E1E1E;
+    --fm-chip-bg: #212121;
+    --fm-chip-text: #FFFFFF;
+    --fm-chip-border: rgba(255, 255, 255, 0.12);
+  }
+
+  /* iOS Frosted Glass Dark Theme */
+  [data-theme='ios-glass-dark'] {
+    --fm-bg: #0A0B10;
+    --fm-bg-elevated: rgba(26, 27, 36, 0.72);
+    --fm-surface-card: rgba(255, 255, 255, 0.055);
+    --fm-surface-hover: rgba(255, 255, 255, 0.11);
+    --fm-header-bg: rgba(10, 11, 16, 0.65);
+    --fm-player-bg: rgba(22, 23, 32, 0.82);
+    --fm-text: #FFFFFF;
+    --fm-text-muted: #94A3B8;
+    --fm-accent: #007AFF;
+    --fm-accent-fg: #FFFFFF;
+    --fm-accent-rgb: 0, 122, 255;
+    --fm-accent-subtle: rgba(0, 122, 255, 0.18);
+    --fm-accent-border: rgba(0, 122, 255, 0.38);
+    --fm-glass: rgba(255, 255, 255, 0.065);
+    --fm-glass-strong: rgba(22, 23, 32, 0.80);
+    --fm-glass-border: rgba(255, 255, 255, 0.15);
+    --fm-glass-highlight: rgba(255, 255, 255, 0.25);
+    --fm-glass-blur: 26px;
+    --fm-glass-sat: 190%;
+    --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(0, 122, 255, 0.20);
+    --fm-orb-2: rgba(168, 85, 247, 0.16);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(255, 255, 255, 0.07);
+    --fm-chip-bg: rgba(255, 255, 255, 0.08);
+    --fm-chip-text: #FFFFFF;
+    --fm-chip-border: rgba(255, 255, 255, 0.14);
+  }
+
+  /* iOS Frosted Glass Light Theme */
+  [data-theme='ios-glass-light'],
+  [data-theme='ios-frost'] {
+    --fm-bg: #EBF0F7;
+    --fm-bg-elevated: rgba(255, 255, 255, 0.78);
+    --fm-surface-card: rgba(255, 255, 255, 0.65);
+    --fm-surface-hover: rgba(255, 255, 255, 0.90);
+    --fm-header-bg: rgba(235, 240, 247, 0.70);
+    --fm-player-bg: rgba(255, 255, 255, 0.85);
+    --fm-text: #0F172A;
+    --fm-text-muted: #475569;
+    --fm-accent: #007AFF;
+    --fm-accent-fg: #FFFFFF;
+    --fm-accent-rgb: 0, 122, 255;
+    --fm-accent-subtle: rgba(0, 122, 255, 0.15);
+    --fm-accent-border: rgba(0, 122, 255, 0.35);
+    --fm-glass: rgba(255, 255, 255, 0.58);
+    --fm-glass-strong: rgba(255, 255, 255, 0.86);
+    --fm-glass-border: rgba(15, 23, 42, 0.10);
+    --fm-glass-highlight: rgba(255, 255, 255, 0.92);
+    --fm-glass-blur: 24px;
+    --fm-glass-sat: 185%;
+    --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(0, 122, 255, 0.18);
+    --fm-orb-2: rgba(56, 189, 248, 0.20);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(255, 255, 255, 0.72);
+    --fm-chip-bg: rgba(255, 255, 255, 0.70);
+    --fm-chip-text: #0F172A;
+    --fm-chip-border: rgba(15, 23, 42, 0.10);
+  }
+
+  /* Clean Modern Light Theme */
+  [data-theme='modern-light'] {
+    --fm-bg: #FFFFFF;
+    --fm-bg-elevated: #F8FAFC;
+    --fm-surface-card: #FFFFFF;
+    --fm-surface-hover: #F1F5F9;
+    --fm-header-bg: rgba(255, 255, 255, 0.95);
+    --fm-player-bg: #F8FAFC;
+    --fm-text: #0F172A;
+    --fm-text-muted: #64748B;
+    --fm-accent: #FF0000;
+    --fm-accent-fg: #FFFFFF;
+    --fm-accent-rgb: 255, 0, 0;
+    --fm-accent-subtle: rgba(255, 0, 0, 0.12);
+    --fm-accent-border: rgba(255, 0, 0, 0.35);
+    --fm-glass: #F8FAFC;
+    --fm-glass-strong: #FFFFFF;
+    --fm-glass-border: rgba(15, 23, 42, 0.08);
+    --fm-glass-highlight: rgba(255, 255, 255, 1);
+    --fm-glass-blur: 12px;
+    --fm-glass-sat: 100%;
+    --fm-glass-sheen: 0.5;
+    --fm-orb-1: rgba(255, 0, 0, 0.06);
+    --fm-orb-2: rgba(255, 60, 60, 0.04);
+    --fm-orb-opacity: 0.2;
+    --fm-input-bg: #F1F5F9;
+    --fm-chip-bg: #F1F5F9;
+    --fm-chip-text: #0F172A;
+    --fm-chip-border: rgba(15, 23, 42, 0.08);
+  }
+
+  /* Legacy Presets for Backward Compatibility */
+  [data-theme='midnight-lime'] {
+    --fm-bg: #09090E;
     --fm-bg-elevated: rgba(22, 23, 32, 0.72);
-    --fm-text: #ffffff;
-    --fm-text-muted: #b4b6c7;
-    --fm-accent: #b9f36a;
-    --fm-accent-fg: #0c1207;
+    --fm-surface-card: rgba(255, 255, 255, 0.06);
+    --fm-surface-hover: rgba(255, 255, 255, 0.10);
+    --fm-header-bg: rgba(9, 9, 14, 0.75);
+    --fm-player-bg: rgba(20, 21, 30, 0.85);
+    --fm-text: #FFFFFF;
+    --fm-text-muted: #B4B6C7;
+    --fm-accent: #B9F36A;
+    --fm-accent-fg: #0C1207;
+    --fm-accent-rgb: 185, 243, 106;
+    --fm-accent-subtle: rgba(185, 243, 106, 0.16);
+    --fm-accent-border: rgba(185, 243, 106, 0.38);
     --fm-glass: rgba(255, 255, 255, 0.065);
     --fm-glass-strong: rgba(20, 21, 30, 0.78);
     --fm-glass-border: rgba(255, 255, 255, 0.14);
     --fm-glass-highlight: rgba(255, 255, 255, 0.24);
-    --fm-orb-1: rgba(185, 243, 106, 0.16);
-    --fm-orb-2: rgba(94, 129, 244, 0.15);
-    --fm-input-bg: rgba(255, 255, 255, 0.06);
     --fm-glass-blur: 24px;
     --fm-glass-sat: 185%;
-    --fm-orb-opacity: 1;
     --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(185, 243, 106, 0.16);
+    --fm-orb-2: rgba(94, 129, 244, 0.15);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(255, 255, 255, 0.06);
+    --fm-chip-bg: rgba(255, 255, 255, 0.08);
+    --fm-chip-text: #FFFFFF;
+    --fm-chip-border: rgba(255, 255, 255, 0.12);
+  }
+
+  [data-theme='aurora-cyan'] {
+    --fm-bg: #07101F;
+    --fm-bg-elevated: rgba(14, 29, 52, 0.74);
+    --fm-surface-card: rgba(186, 230, 253, 0.06);
+    --fm-surface-hover: rgba(186, 230, 253, 0.12);
+    --fm-header-bg: rgba(7, 16, 31, 0.75);
+    --fm-player-bg: rgba(10, 22, 42, 0.85);
+    --fm-text: #F8FAFC;
+    --fm-text-muted: #A6BDD8;
+    --fm-accent: #38BDF8;
+    --fm-accent-fg: #041423;
+    --fm-accent-rgb: 56, 189, 248;
+    --fm-accent-subtle: rgba(56, 189, 248, 0.16);
+    --fm-accent-border: rgba(56, 189, 248, 0.38);
+    --fm-glass: rgba(186, 230, 253, 0.08);
+    --fm-glass-strong: rgba(10, 22, 42, 0.80);
+    --fm-glass-border: rgba(186, 230, 253, 0.16);
+    --fm-glass-highlight: rgba(224, 242, 254, 0.28);
+    --fm-glass-blur: 24px;
+    --fm-glass-sat: 185%;
+    --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(56, 189, 248, 0.20);
+    --fm-orb-2: rgba(45, 212, 191, 0.15);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(186, 230, 253, 0.07);
+    --fm-chip-bg: rgba(186, 230, 253, 0.08);
+    --fm-chip-text: #F8FAFC;
+    --fm-chip-border: rgba(186, 230, 253, 0.14);
+  }
+
+  [data-theme='obsidian-rose'] {
+    --fm-bg: #110A11;
+    --fm-bg-elevated: rgba(34, 19, 32, 0.74);
+    --fm-surface-card: rgba(255, 228, 235, 0.06);
+    --fm-surface-hover: rgba(255, 228, 235, 0.12);
+    --fm-header-bg: rgba(17, 10, 17, 0.75);
+    --fm-player-bg: rgba(28, 15, 26, 0.85);
+    --fm-text: #FFF8FA;
+    --fm-text-muted: #CEB6C2;
+    --fm-accent: #FB7185;
+    --fm-accent-fg: #1C060B;
+    --fm-accent-rgb: 251, 113, 133;
+    --fm-accent-subtle: rgba(251, 113, 133, 0.18);
+    --fm-accent-border: rgba(251, 113, 133, 0.38);
+    --fm-glass: rgba(255, 228, 235, 0.07);
+    --fm-glass-strong: rgba(28, 15, 26, 0.82);
+    --fm-glass-border: rgba(255, 220, 230, 0.15);
+    --fm-glass-highlight: rgba(255, 230, 238, 0.25);
+    --fm-glass-blur: 24px;
+    --fm-glass-sat: 185%;
+    --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(251, 113, 133, 0.20);
+    --fm-orb-2: rgba(244, 114, 182, 0.13);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(255, 228, 235, 0.07);
+    --fm-chip-bg: rgba(255, 228, 235, 0.08);
+    --fm-chip-text: #FFF8FA;
+    --fm-chip-border: rgba(255, 220, 230, 0.14);
+  }
+
+  [data-theme='amber-vinyl'] {
+    --fm-bg: #110E0A;
+    --fm-bg-elevated: rgba(34, 27, 19, 0.75);
+    --fm-surface-card: rgba(255, 243, 214, 0.06);
+    --fm-surface-hover: rgba(255, 243, 214, 0.12);
+    --fm-header-bg: rgba(17, 14, 10, 0.75);
+    --fm-player-bg: rgba(26, 21, 15, 0.85);
+    --fm-text: #FFFBF2;
+    --fm-text-muted: #CFC2AE;
+    --fm-accent: #FBBF24;
+    --fm-accent-fg: #1A1203;
+    --fm-accent-rgb: 251, 191, 36;
+    --fm-accent-subtle: rgba(251, 191, 36, 0.18);
+    --fm-accent-border: rgba(251, 191, 36, 0.38);
+    --fm-glass: rgba(255, 243, 214, 0.07);
+    --fm-glass-strong: rgba(26, 21, 15, 0.82);
+    --fm-glass-border: rgba(255, 236, 194, 0.15);
+    --fm-glass-highlight: rgba(255, 244, 214, 0.24);
+    --fm-glass-blur: 24px;
+    --fm-glass-sat: 185%;
+    --fm-glass-sheen: 1;
+    --fm-orb-1: rgba(251, 191, 36, 0.18);
+    --fm-orb-2: rgba(249, 115, 22, 0.14);
+    --fm-orb-opacity: 1;
+    --fm-input-bg: rgba(255, 243, 214, 0.07);
+    --fm-chip-bg: rgba(255, 243, 214, 0.08);
+    --fm-chip-text: #FFFBF2;
+    --fm-chip-border: rgba(255, 236, 194, 0.14);
   }
 
   html {
@@ -37,7 +309,43 @@
   }
 }
 
-/* iOS-style Liquid Glass Surfaces (customizable via Settings) */
+/* ==========================================================================
+   Frosted Glass & Liquid Surface Utilities
+   ========================================================================== */
+
+/* Modern Frosted Glass Surfaces */
+.glass-surface {
+  background: var(--fm-glass);
+  backdrop-filter: blur(var(--fm-glass-blur)) saturate(var(--fm-glass-sat));
+  -webkit-backdrop-filter: blur(var(--fm-glass-blur)) saturate(var(--fm-glass-sat));
+  border: 1px solid var(--fm-glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--fm-glass-highlight),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.03),
+    0 10px 30px -10px rgba(0, 0, 0, 0.28);
+}
+
+.glass-panel {
+  background: var(--fm-glass-strong);
+  backdrop-filter: blur(calc(var(--fm-glass-blur) + 8px)) saturate(calc(var(--fm-glass-sat) + 15%));
+  -webkit-backdrop-filter: blur(calc(var(--fm-glass-blur) + 8px)) saturate(calc(var(--fm-glass-sat) + 15%));
+  border: 1px solid var(--fm-glass-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--fm-glass-highlight),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.05),
+    0 24px 60px -15px rgba(0, 0, 0, 0.40);
+}
+
+.glass-pill {
+  background: var(--fm-glass);
+  backdrop-filter: blur(calc(var(--fm-glass-blur) * 0.75)) saturate(var(--fm-glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--fm-glass-blur) * 0.75)) saturate(var(--fm-glass-sat));
+  border: 1px solid var(--fm-glass-border);
+  box-shadow: inset 0 1px 0 0 var(--fm-glass-highlight);
+  border-radius: 9999px;
+}
+
+/* Liquid Glass Surfaces (backward-compatible aliases) */
 .liquid-glass {
   background: var(--fm-glass);
   backdrop-filter: blur(var(--fm-glass-blur)) saturate(var(--fm-glass-sat));

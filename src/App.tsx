@@ -13,7 +13,6 @@ import {
   Volume1,
   Volume2,
   VolumeX,
-  Maximize2,
   ListMusic,
   FileText,
   Search,
@@ -33,7 +32,6 @@ import {
   Loader2,
   Music2,
   KeyRound,
-  Settings,
   Heart,
   Plus,
   Library,
@@ -45,6 +43,7 @@ import {
   Smartphone,
   Package,
   ExternalLink,
+  Edit3,
 } from 'lucide-react';
 import {
   musicNetworkClient,
@@ -75,6 +74,7 @@ import {
   saveSearchHistory,
   addSearchHistoryItem,
   removeSearchHistoryItem,
+  renamePlaylist,
 } from './services/libraryStore';
 import { fetchTrackLyrics, LyricsResult } from './services/lyricsService';
 import { BUILTIN_EQ_PROFILES } from './services/webAudioEqualizer';
@@ -86,6 +86,10 @@ import {
 import { TrackArtwork } from './components/TrackArtwork';
 import { PlaylistPickerModal } from './components/PlaylistPickerModal';
 import { SettingsModal, RestoreMode } from './components/SettingsModal';
+import { YtHeader } from './components/YtHeader';
+import { YtSidebar } from './components/YtSidebar';
+import { YtPlayerBar } from './components/YtPlayerBar';
+import { PlaylistRenameModal } from './components/PlaylistRenameModal';
 import {
   AppUpdateCheckResult,
   CURRENT_APP_VERSION,
@@ -265,6 +269,16 @@ export default function App() {
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>(() => loadSearchHistory());
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [renamePlaylistModal, setRenamePlaylistModal] = useState<{
+    isOpen: boolean;
+    playlistId: string;
+    currentName: string;
+  }>({
+    isOpen: false,
+    playlistId: '',
+    currentName: '',
+  });
   const [mobileNavTab, setMobileNavTab] = useState<'home' | 'library' | 'offline' | 'queue'>('home');
   const [githubRepo, setGithubRepo] = useState<string>(() => loadStoredGithubRepo());
   const [updateCheckResult, setUpdateCheckResult] = useState<AppUpdateCheckResult | null>(null);
@@ -502,6 +516,12 @@ export default function App() {
         ? `Created "${trimmed}" and added "${initialTrack.title}"`
         : `Created playlist "${trimmed}"`
     );
+  };
+
+  const handleRenamePlaylist = (playlistId: string, newName: string) => {
+    const updated = renamePlaylist(playlistId, newName);
+    setPlaylists(updated);
+    showToast(`Renamed playlist to "${newName}"`);
   };
 
   const handleToggleTrackInPlaylist = (playlistId: string, track: Track) => {
@@ -938,52 +958,78 @@ export default function App() {
         </div>
       )}
 
+      {/* YouTube Music Top Navigation Header */}
+      <YtHeader
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        query={query}
+        onQueryChange={(q) => {
+          setQuery(q);
+          if (!q.trim()) setSearchResults(null);
+        }}
+        onSearchSubmit={(q) => handleSearch(q)}
+        onClearSearch={() => {
+          setQuery('');
+          setSearchResults(null);
+        }}
+        isSearchFocused={isSearchFocused}
+        setIsSearchFocused={setIsSearchFocused}
+        searchHistory={searchHistory}
+        onSelectHistoryItem={(item) => handleSearch(item)}
+        onClearHistory={() => {
+          setSearchHistory([]);
+          saveSearchHistory([]);
+        }}
+        currentTheme={themeId}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenDiagnostics={() => setShowDiagnostics(true)}
+        updateAvailable={Boolean(updateCheckResult?.updateAvailable)}
+        latestVersion={updateCheckResult?.latestVersion}
+        onOpenUpdatePrompt={() => setShowUpdatePromptModal(true)}
+      />
+
+      {/* YouTube Music Left Navigation Sidebar */}
+      <YtSidebar
+        isOpen={isSidebarOpen}
+        currentTab={mainTab === 'online' ? (selectedVibe === 'All' ? 'home' : 'explore') : mainTab}
+        onSelectTab={(tab) => {
+          if (tab === 'home') {
+            setMainTab('online');
+            setSelectedVibe('All');
+          } else if (tab === 'explore') {
+            setMainTab('online');
+            setSelectedVibe('Hindi hits');
+          } else if (tab === 'library') {
+            setMainTab('library');
+          } else if (tab === 'offline') {
+            setMainTab('offline');
+          }
+        }}
+        likedTracksCount={likedTracks.length}
+        onSelectLikedSongs={() => {
+          setMainTab('library');
+          setSelectedPlaylistView('liked');
+        }}
+        isLikedSelected={mainTab === 'library' && selectedPlaylistView === 'liked'}
+        playlists={playlists}
+        activePlaylistId={mainTab === 'library' ? selectedPlaylistView : undefined}
+        onSelectPlaylist={(id) => {
+          setMainTab('library');
+          setSelectedPlaylistView(id);
+        }}
+        onCreatePlaylist={() => {
+          setMainTab('library');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 pt-5 sm:pt-7 pb-6">
-        {/* App Bar / Header */}
-        <header className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3 min-w-0">
-            <FmLogo size={42} />
-            <div className="min-w-0">
-              <span className="font-bold tracking-[2px] text-base leading-none block">FM MUSIC</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {updateCheckResult?.updateAvailable && (
-              <button
-                onClick={() => setShowUpdatePromptModal(true)}
-                className="min-h-10 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--fm-accent)] text-[var(--fm-accent-fg)] flex items-center gap-1.5 cursor-pointer shadow-sm"
-                title={`Update available: v${updateCheckResult.latestVersion}`}
-              >
-                <Smartphone className="w-3.5 h-3.5 shrink-0" />
-                <span>Update v{updateCheckResult.latestVersion}</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowDiagnostics(true)}
-              className="hidden md:flex min-h-10 px-3 py-1.5 rounded-full text-xs font-semibold liquid-glass-button text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] items-center gap-1.5 cursor-pointer"
-              title={`InnerTube Visitor Session Active: ${visitorSession.visitorData || 'Ready'}`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[var(--fm-accent)]" />
-              <span>Diagnostics</span>
-            </button>
-
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              className="min-h-11 min-w-11 px-3 sm:px-3.5 rounded-full text-xs sm:text-sm font-semibold liquid-glass-button text-[var(--fm-text)] flex items-center justify-center gap-1.5 cursor-pointer"
-              title="Settings, Themes, Player Customization, Backup & Android APK"
-              aria-label="Open Settings"
-            >
-              <Settings className="w-4 h-4 text-[var(--fm-accent)]" />
-              <span className="hidden xs:inline">Settings</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Main Section Mode Switcher (Online Discovery / Library & Playlists / Offline Collection) */}
-        <section className="mt-5 p-1.5 liquid-glass rounded-2xl flex items-center gap-1.5">
+      <main
+        className={`flex-1 transition-all duration-300 ${
+          isSidebarOpen ? 'md:ml-60' : 'md:ml-18'
+        } pt-20 pb-36 px-3 sm:px-6 md:px-8 max-w-7xl mx-auto w-full`}
+      >
+        {/* Main Section Mode Switcher (Visible on Mobile) */}
+        <section className="md:hidden mt-2 p-1.5 liquid-glass rounded-2xl flex items-center gap-1.5">
           <button
             onClick={() => setMainTab('online')}
             className={`flex-1 min-h-11 py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
@@ -1489,21 +1535,42 @@ export default function App() {
                           </div>
                           <span className="text-xs opacity-80 shrink-0 tabular-nums">{pl.tracks.length}</span>
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeletePlaylist(pl.id);
-                          }}
-                          className={`w-9 h-9 mr-1 rounded-lg flex items-center justify-center shrink-0 cursor-pointer ${
-                            isSelected
-                              ? 'hover:bg-black/15 text-[var(--fm-accent-fg)]'
-                              : 'hover:bg-red-500/20 text-[var(--fm-text-muted)] hover:text-red-400'
-                          }`}
-                          title={`Delete ${pl.name}`}
-                          aria-label={`Delete playlist ${pl.name}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamePlaylistModal({
+                                isOpen: true,
+                                playlistId: pl.id,
+                                currentName: pl.name,
+                              });
+                            }}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 cursor-pointer ${
+                              isSelected
+                                ? 'hover:bg-black/15 text-[var(--fm-accent-fg)]'
+                                : 'hover:bg-[var(--fm-glass)] text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
+                            }`}
+                            title={`Rename ${pl.name}`}
+                            aria-label={`Rename playlist ${pl.name}`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePlaylist(pl.id);
+                            }}
+                            className={`w-8 h-8 mr-1 rounded-lg flex items-center justify-center shrink-0 cursor-pointer ${
+                              isSelected
+                                ? 'hover:bg-black/15 text-[var(--fm-accent-fg)]'
+                                : 'hover:bg-red-500/20 text-[var(--fm-text-muted)] hover:text-red-400'
+                            }`}
+                            title={`Delete ${pl.name}`}
+                            aria-label={`Delete playlist ${pl.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1588,7 +1655,23 @@ export default function App() {
                   <div className="liquid-glass rounded-3xl p-4 sm:p-5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[var(--fm-glass-border)]">
                       <div>
-                        <h3 className="text-lg font-bold">{activeCustomPlaylist.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-bold">{activeCustomPlaylist.name}</h3>
+                          <button
+                            onClick={() =>
+                              setRenamePlaylistModal({
+                                isOpen: true,
+                                playlistId: activeCustomPlaylist.id,
+                                currentName: activeCustomPlaylist.name,
+                              })
+                            }
+                            className="p-1 rounded-lg text-[var(--fm-text-muted)] hover:text-[var(--fm-accent)] hover:bg-[var(--fm-glass)] transition-colors cursor-pointer"
+                            title="Rename Playlist"
+                            aria-label="Rename playlist"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </div>
                         <p className="text-xs text-[var(--fm-text-muted)]">
                           {activeCustomPlaylist.tracks.length}{' '}
                           {activeCustomPlaylist.tracks.length === 1 ? 'track' : 'tracks'}
@@ -1821,163 +1904,41 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Floating Liquid Glass Mini-Player Bar */}
-      <aside className="fixed bottom-16 sm:bottom-3 left-0 right-0 sm:left-4 sm:right-4 max-w-4xl sm:mx-auto liquid-glass-strong sm:rounded-3xl z-40 transition-all overflow-hidden">
-        {/* Scrubber Progress Bar */}
-        <div className="relative w-full h-1 bg-[var(--fm-glass-border)] cursor-pointer group">
-          <div
-            className="h-full bg-[var(--fm-accent)] transition-all duration-150 relative"
-            style={{
-              width: `${playerState.duration ? (playerState.currentTime / playerState.duration) * 100 : 0}%`,
-            }}
-          >
-            <span className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-[var(--fm-accent)] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={playerState.duration || 100}
-            value={playerState.currentTime}
-            onChange={(e) => inAppPlayer.seekTo(Number(e.target.value))}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            aria-label="Seek track position"
-          />
-        </div>
+      {/* YouTube Music Persistent Bottom Player Bar */}
+      <YtPlayerBar
+        playerState={playerState}
+        onTogglePlay={() => inAppPlayer.togglePlayPause()}
+        onNext={() => inAppPlayer.next()}
+        onPrev={() => inAppPlayer.prev()}
+        onSeek={(sec) => inAppPlayer.seekTo(sec)}
+        onSetVolume={(vol) => inAppPlayer.setVolume(vol)}
+        onToggleMute={() => inAppPlayer.toggleMute()}
+        onCycleRepeat={() => inAppPlayer.cycleRepeatMode()}
+        onCycleShuffle={() => inAppPlayer.cycleShuffleMode()}
+        isLiked={playerState.currentTrack ? likedTracks.some((t) => t.id === playerState.currentTrack?.id) : false}
+        onToggleLike={(track) => toggleLike(track)}
+        onOpenLyrics={() => {
+          setActiveModalTab('lyrics');
+          setShowNowPlayingModal(true);
+        }}
+        onOpenQueue={() => {
+          setActiveModalTab('queue');
+          setShowNowPlayingModal(true);
+        }}
+        onOpenEqualizer={() => {
+          setShowSettingsModal(true);
+        }}
+        onExpandNowPlaying={() => setShowNowPlayingModal(true)}
+      />
 
-        <div className="px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2.5 sm:gap-3">
-          {/* Left: Track Info & Artwork */}
-          <div
-            onClick={() => setShowNowPlayingModal(true)}
-            className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 cursor-pointer group"
-          >
-            {playerState.currentTrack ? (
-              <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden shrink-0 shadow-sm">
-                <TrackArtwork
-                  src={playerState.currentTrack.thumbnail}
-                  alt={playerState.currentTrack.title}
-                  className="w-full h-full"
-                />
-              </div>
-            ) : (
-              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl liquid-glass flex items-center justify-center shrink-0">
-                <FmLogo size={24} />
-              </div>
-            )}
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <h3 className="font-semibold text-xs sm:text-sm truncate group-hover:text-[var(--fm-accent)] transition-colors">
-                  {playerState.currentTrack ? playerState.currentTrack.title : 'Ready to Play'}
-                </h3>
-                {(playerState.sleepTimerRemainingSec || playerState.sleepAtTrackEnd) && (
-                  <span className="shrink-0 text-[10px] font-bold text-[var(--fm-accent)] flex items-center gap-0.5 tabular-nums">
-                    <Moon className="w-3 h-3" />
-                    {playerState.sleepAtTrackEnd
-                      ? 'End'
-                      : formatCountdown(playerState.sleepTimerRemainingSec || 0)}
-                  </span>
-                )}
-              </div>
-              <p className="text-[var(--fm-text-muted)] text-[11px] sm:text-xs truncate mt-0.5 tabular-nums">
-                {playerState.currentTrack
-                  ? `${playerState.currentTrack.artist} • ${formatTime(playerState.currentTime)} / ${formatTime(playerState.duration)}`
-                  : 'Select a vibe or song above'}
-              </p>
-            </div>
-          </div>
-
-          {/* Right: Visualizer, Volume & Controls */}
-          <div className="shrink-0 flex items-center gap-1 sm:gap-2">
-            {customization.showVisualizer && (
-              <AudioVisualizer isPlaying={playerState.isPlaying} className="hidden lg:flex" />
-            )}
-
-            {/* Desktop Volume Slider */}
-            <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-full liquid-glass">
-              <button
-                onClick={() => inAppPlayer.toggleMute()}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] cursor-pointer"
-                title={playerState.isMuted ? 'Unmute' : 'Mute'}
-                aria-label={playerState.isMuted ? 'Unmute' : 'Mute'}
-              >
-                <VolumeIcon className="w-4 h-4" />
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={playerState.isMuted ? 0 : playerState.volume}
-                onChange={(e) => inAppPlayer.setVolume(Number(e.target.value))}
-                className="w-16 fm-range"
-                aria-label="Volume"
-              />
-            </div>
-
-            {playerState.currentTrack && (
-              <button
-                onClick={(e) => toggleLike(playerState.currentTrack!, e)}
-                className={`hidden sm:flex w-9 h-9 rounded-full items-center justify-center cursor-pointer transition-colors ${
-                  likedIds.has(playerState.currentTrack.id)
-                    ? 'text-[var(--fm-accent)]'
-                    : 'text-[var(--fm-text-muted)] hover:text-[var(--fm-text)]'
-                }`}
-                title="Like current track"
-                aria-label="Like current track"
-              >
-                <Heart
-                  className={`w-4 h-4 ${likedIds.has(playerState.currentTrack.id) ? 'fill-current' : ''}`}
-                />
-              </button>
-            )}
-
-            <button
-              onClick={() => inAppPlayer.prev()}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] transition-colors cursor-pointer"
-              title="Previous Track"
-              aria-label="Previous Track"
-            >
-              <SkipBack className="w-4 h-4 fill-current" />
-            </button>
-
-            <button
-              onClick={() => {
-                if (!playerState.currentTrack && currentVibeTracks.length > 0) {
-                  handlePlayTrack(currentVibeTracks[0], currentVibeTracks);
-                } else {
-                  inAppPlayer.togglePlayPause();
-                }
-              }}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[var(--fm-accent)] hover:opacity-95 text-[var(--fm-accent-fg)] font-bold flex items-center justify-center shadow-md transition-all cursor-pointer"
-              title={playerState.isPlaying ? 'Pause' : 'Play'}
-              aria-label={playerState.isPlaying ? 'Pause' : 'Play'}
-            >
-              {playerState.isPlaying ? (
-                <Pause className="w-4 h-4 fill-current" />
-              ) : (
-                <Play className="w-4 h-4 fill-current ml-0.5" />
-              )}
-            </button>
-
-            <button
-              onClick={() => inAppPlayer.next()}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] transition-colors cursor-pointer"
-              title="Next Track"
-              aria-label="Next Track"
-            >
-              <SkipForward className="w-4 h-4 fill-current" />
-            </button>
-
-            <button
-              onClick={() => setShowNowPlayingModal(true)}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] transition-colors cursor-pointer"
-              title="Open Now Playing Sheet"
-              aria-label="Open Now Playing Sheet"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
+      {/* Playlist Rename Modal */}
+      <PlaylistRenameModal
+        isOpen={renamePlaylistModal.isOpen}
+        onClose={() => setRenamePlaylistModal({ isOpen: false, playlistId: '', currentName: '' })}
+        playlistId={renamePlaylistModal.playlistId}
+        currentName={renamePlaylistModal.currentName}
+        onRename={handleRenamePlaylist}
+      />
 
       {/* Mobile Bottom Navigation Bar */}
       <nav className="fixed bottom-0 left-0 right-0 h-16 liquid-glass-strong z-40 flex items-center justify-around px-2 sm:hidden pb-[env(safe-area-inset-bottom)] select-none">

@@ -41,6 +41,10 @@ import { Track } from '../data/musicCatalog';
 import {
   THEMES,
   ThemeId,
+  CURATED_ACCENTS,
+  AccentConfig,
+  getStoredAccent,
+  setStoredAccent,
   UserPlaylist,
   FmMusicBackup,
   PlayerCustomization,
@@ -118,6 +122,7 @@ export function SettingsModal({
   onOpenUpdatePrompt,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'themes' | 'player' | 'eq' | 'backup' | 'apk'>('themes');
+  const [accentConfig, setAccentConfig] = useState<AccentConfig>(() => getStoredAccent());
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('merge');
   const [pasteInput, setPasteInput] = useState('');
   const [showPasteArea, setShowPasteArea] = useState(false);
@@ -391,6 +396,51 @@ export function SettingsModal({
                             {theme.subtitle}
                           </p>
                         </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Accent Color Palette */}
+              <div className="liquid-glass rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Palette className="w-4 h-4 text-[var(--fm-accent)]" />
+                    <h4 className="text-sm font-bold">Accent Color</h4>
+                  </div>
+                  <span className="text-xs text-[var(--fm-text-muted)] font-medium capitalize">
+                    {accentConfig.mode === 'preset' ? accentConfig.presetId?.replace('-', ' ') : accentConfig.mode}
+                  </span>
+                </div>
+
+                <p className="text-xs text-[var(--fm-text-muted)] leading-snug">
+                  Choose a vibrant highlight color for buttons, track sliders, and active tabs.
+                </p>
+
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-1">
+                  {CURATED_ACCENTS.map((accent) => {
+                    const isSelected = accentConfig.mode === 'preset' && accentConfig.presetId === accent.id;
+                    return (
+                      <button
+                        key={accent.id}
+                        onClick={() => {
+                          const newConfig: AccentConfig = { mode: 'preset', presetId: accent.id };
+                          setAccentConfig(newConfig);
+                          setStoredAccent(newConfig);
+                          onNotify(`Accent color updated to ${accent.name}`);
+                        }}
+                        className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-[var(--fm-accent)] bg-[var(--fm-accent-subtle)] ring-1 ring-[var(--fm-accent)]'
+                            : 'border-[var(--fm-glass-border)] bg-[var(--fm-glass)] hover:scale-[1.02]'
+                        }`}
+                      >
+                        <span
+                          style={{ backgroundColor: accent.hex }}
+                          className="w-4 h-4 rounded-full border border-white/40 shrink-0 shadow-xs"
+                        />
+                        <span className="text-xs font-semibold truncate text-[var(--fm-text)]">{accent.name}</span>
                       </button>
                     );
                   })}

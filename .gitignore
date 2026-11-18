@@ -9,3 +9,6 @@ local.properties
 .vscode/
 .antigravity/
 .aistudio/
+node_modules/
+dist/
+

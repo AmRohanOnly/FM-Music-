@@ -15,6 +15,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -152,14 +153,14 @@ val AppThemes = listOf(
         description = "Translucent frosted glass with specular highlight borders",
         background = Color(0xFF0A0D14),
         surface = Color(0xFF121824),
-        surfaceCard = Color(0x33FFFFFF),
-        surfaceHover = Color(0x4DFFFFFF),
+        surfaceCard = Color(0xFFFFFFFF).copy(alpha = 0.20f),
+        surfaceHover = Color(0xFFFFFFFF).copy(alpha = 0.30f),
         textPrimary = Color(0xFFF8FAFC),
         textSecondary = Color(0xFF94A3B8),
-        border = Color(0x38FFFFFF),
+        border = Color(0xFFFFFFFF).copy(alpha = 0.22f),
         isGlass = true,
         isLight = false,
-        glassHighlight = Color(0x4DFFFFFF)
+        glassHighlight = Color(0xFFFFFFFF).copy(alpha = 0.30f)
     ),
     AppThemePalette(
         id = "IOS_GLASS_LIGHT",
@@ -167,14 +168,14 @@ val AppThemes = listOf(
         description = "Apple milk glass with bright vibrant ambiance",
         background = Color(0xFFE8EEF5),
         surface = Color(0xFFF1F5F9),
-        surfaceCard = Color(0xB3FFFFFF),
-        surfaceHover = Color(0xCCFFFFFF),
+        surfaceCard = Color(0xFFFFFFFF).copy(alpha = 0.70f),
+        surfaceHover = Color(0xFFFFFFFF).copy(alpha = 0.80f),
         textPrimary = Color(0xFF0F172A),
         textSecondary = Color(0xFF475569),
-        border = Color(0x26000000),
+        border = Color(0xFF000000).copy(alpha = 0.15f),
         isGlass = true,
         isLight = true,
-        glassHighlight = Color(0x66FFFFFF)
+        glassHighlight = Color(0xFFFFFFFF).copy(alpha = 0.40f)
     ),
     AppThemePalette(
         id = "MODERN_LIGHT",
@@ -217,7 +218,7 @@ val AppThemes = listOf(
         border = Color(0xFF1E4068),
         isGlass = true,
         isLight = false,
-        glassHighlight = Color(0x3338BDF8)
+        glassHighlight = Color(0xFF38BDF8).copy(alpha = 0.20f)
     ),
     AppThemePalette(
         id = "OBSIDIAN_ROSE",
@@ -292,7 +293,13 @@ class MainActivity : ComponentActivity() {
             }
             val accentColor = remember(accentHex) {
                 try {
-                    Color(android.graphics.Color.parseColor(accentHex))
+                    val parsed = android.graphics.Color.parseColor(accentHex)
+                    Color(
+                        red = (parsed shr 16) and 0xFF,
+                        green = (parsed shr 8) and 0xFF,
+                        blue = parsed and 0xFF,
+                        alpha = (parsed ushr 24) and 0xFF
+                    )
                 } catch (_: Exception) {
                     Color(0xFFFF0000)
                 }
@@ -2031,7 +2038,7 @@ private fun NowPlayingExpandedSheet(
                     if (!state.errorMessage.isNullOrBlank()) {
                         Spacer(Modifier.height(14.dp))
                         Surface(
-                            color = Color(0x33FF5252),
+                            color = Color(0xFFFF5252).copy(alpha = 0.20f),
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(1.dp, Color(0xFFFF5252)),
                             modifier = Modifier.fillMaxWidth()

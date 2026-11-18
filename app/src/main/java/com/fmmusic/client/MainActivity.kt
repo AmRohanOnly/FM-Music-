@@ -578,10 +578,16 @@ private fun ModernMusicAppRoot(playbackManager: ExoPlaybackManager) {
     if (showUpdateDialog) {
         AppUpdateSettingsDialog(
             state = updateState,
-            onSaveRepo = { updateManager.updateGithubRepo(it) },
+            onSaveRepo = { updateManager.setGithubRepo(it) },
             onCheckNow = { updateManager.checkForUpdates(forceManual = true) },
             onOpenAvailableUpdate = { updateState.availableUpdate?.let { updateManager.downloadAndInstallUpdate(it) } },
-            onOpenPackagesPage = { updateManager.openPackagesInBrowser() },
+            onOpenPackagesPage = {
+                val repo = updateState.githubRepo.trim()
+                if (repo.isNotBlank()) {
+                    val url = if (repo.startsWith("http")) repo else "https://github.com/$repo/packages"
+                    updateManager.openInBrowser(url)
+                }
+            },
             onDismiss = { showUpdateDialog = false }
         )
     }

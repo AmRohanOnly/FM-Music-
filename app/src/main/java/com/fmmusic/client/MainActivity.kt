@@ -2185,7 +2185,6 @@ private fun NowPlayingExpandedSheet(
                             )
                         }
                     }
-                    }
                 }
                 1 -> {
                     // Lyrics View

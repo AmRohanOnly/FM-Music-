@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Play,
   Pause,
@@ -64,30 +65,58 @@ export function YtPlayerBar({
   const track = playerState.currentTrack;
   if (!track) return null;
 
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubValue, setScrubValue] = useState<number | null>(null);
+
+  const displayTime = isScrubbing && scrubValue !== null ? scrubValue : playerState.currentTime;
   const progressPercent = playerState.duration > 0
-    ? (playerState.currentTime / playerState.duration) * 100
+    ? (displayTime / playerState.duration) * 100
     : 0;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 h-20 z-40 bg-[var(--fm-player-bg)] backdrop-blur-2xl border-t border-[var(--fm-glass-border)] px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 select-none shadow-2xl transition-colors">
-      {/* Top Thin Interactive Scrubber Line for Instant Seeking */}
+      {/* Top Thin Interactive Scrubber Line for Instant Seeking & Dragging */}
       <div
-        className="absolute -top-1 left-0 right-0 h-1.5 group cursor-pointer"
-        onClick={(e) => {
+        className="absolute -top-2 left-0 right-0 h-4 flex items-center group cursor-pointer z-50 touch-none select-none"
+        onPointerDown={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const clickX = e.clientX - rect.left;
-          const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-          if (playerState.duration > 0) {
-            onSeek(ratio * playerState.duration);
-          }
+          const handleSeek = (clientX: number, isFinal: boolean) => {
+            const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const targetSec = ratio * (playerState.duration || 100);
+            if (isFinal) {
+              onSeek(targetSec);
+              setIsScrubbing(false);
+              setScrubValue(null);
+            } else {
+              setIsScrubbing(true);
+              setScrubValue(targetSec);
+            }
+          };
+
+          handleSeek(e.clientX, false);
+
+          const onPointerMove = (moveEvent: PointerEvent) => {
+            handleSeek(moveEvent.clientX, false);
+          };
+
+          const onPointerUp = (upEvent: PointerEvent) => {
+            handleSeek(upEvent.clientX, true);
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerUp);
         }}
       >
-        <div className="w-full h-1 bg-[var(--fm-glass-border)] group-hover:h-1.5 transition-all">
+        <div className="w-full h-1 bg-[var(--fm-glass-border)] group-hover:h-2 transition-all rounded-full overflow-hidden">
           <div
             style={{ width: `${progressPercent}%` }}
-            className="h-full bg-[var(--fm-accent)] relative"
+            className="h-full bg-[var(--fm-accent)] relative transition-[width] duration-75"
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[var(--fm-accent)] opacity-0 group-hover:opacity-100 shadow-md transition-opacity" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-[var(--fm-accent)] opacity-0 group-hover:opacity-100 shadow-lg transition-opacity" />
           </div>
         </div>
       </div>
@@ -197,14 +226,31 @@ export function YtPlayerBar({
 
         {/* Scrubber Timeline */}
         <div className="w-full hidden sm:flex items-center gap-2.5 mt-1 text-[11px] font-mono text-[var(--fm-text-muted)]">
-          <span className="w-9 text-right shrink-0">{formatSeconds(playerState.currentTime)}</span>
+          <span className="w-9 text-right shrink-0">{formatSeconds(displayTime)}</span>
           <div className="relative flex-1 flex items-center">
             <input
               type="range"
               min={0}
               max={playerState.duration || 100}
-              value={playerState.currentTime || 0}
-              onChange={(e) => onSeek(Number(e.target.value))}
+              value={displayTime || 0}
+              onMouseDown={() => setIsScrubbing(true)}
+              onTouchStart={() => setIsScrubbing(true)}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setScrubValue(val);
+              }}
+              onMouseUp={(e) => {
+                const val = Number(e.currentTarget.value);
+                onSeek(val);
+                setIsScrubbing(false);
+                setScrubValue(null);
+              }}
+              onTouchEnd={(e) => {
+                const val = Number(e.currentTarget.value);
+                onSeek(val);
+                setIsScrubbing(false);
+                setScrubValue(null);
+              }}
               className="w-full h-1 bg-[var(--fm-glass-border)] rounded-lg appearance-none cursor-pointer accent-[var(--fm-accent)]"
             />
           </div>

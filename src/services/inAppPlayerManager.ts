@@ -185,6 +185,8 @@ class InAppPlayerManager {
   private recentlySkipped = new Map<string, SkipRecord>();
   private recentHistory: string[] = [];
   private smartShufflePreferred = true;
+  private isSeeking = false;
+  private seekDebounceTimeout: any = null;
 
   private state: InAppPlayerState = {
     currentTrack: null,
@@ -253,6 +255,7 @@ class InAppPlayerManager {
       }
     });
     this.audioFallback.addEventListener('timeupdate', () => {
+      if (this.isSeeking) return;
       if (this.currentMode === 'audio' && this.audioFallback) {
         this.state.currentTime = this.audioFallback.currentTime;
         const knownDuration = this.state.currentTrack?.duration || 0;
@@ -499,6 +502,9 @@ class InAppPlayerManager {
 
   private startProgressTracker() {
     this.progressInterval = setInterval(() => {
+      if (this.isSeeking) {
+        return;
+      }
       if (
         this.currentMode === 'youtube' &&
         this.ytPlayer &&
@@ -794,24 +800,34 @@ class InAppPlayerManager {
     }
   }
 
-  public seekTo(seconds: number) {
+  public seekTo(seconds: number, isFinal: boolean = true) {
     this.clearActiveFade();
     this.crossfadeTriggeredForTrackId = null;
     this.applyEffectiveVolume(this.state.isMuted ? 0 : this.state.volume);
-    this.state.currentTime = seconds;
-    if (this.currentMode === 'youtube' && this.ytPlayer && this.ytReady) {
-      try {
-        this.ytPlayer.seekTo?.(seconds, true);
-      } catch {}
-    } else if (this.audioFallback) {
-      const mediaDuration = this.audioFallback.duration || 0;
-      if (this.state.currentTrack?.youtubeId && (seconds > mediaDuration - 2 || mediaDuration <= 45)) {
-        this.playViaYouTubeIframe(this.state.currentTrack, seconds);
-      } else {
+
+    const maxDuration = this.state.duration > 0 ? this.state.duration : (this.state.currentTrack?.duration || 300);
+    const targetSeconds = Math.max(0, Math.min(seconds, maxDuration));
+    this.state.currentTime = targetSeconds;
+
+    this.isSeeking = true;
+    if (this.seekDebounceTimeout) {
+      clearTimeout(this.seekDebounceTimeout);
+      this.seekDebounceTimeout = null;
+    }
+
+    if (isFinal) {
+      if (this.currentMode === 'youtube' && this.ytPlayer && this.ytReady) {
         try {
-          this.audioFallback.currentTime = seconds;
+          this.ytPlayer.seekTo?.(targetSeconds, true);
+        } catch {}
+      } else if (this.audioFallback && this.audioFallback.src) {
+        try {
+          this.audioFallback.currentTime = targetSeconds;
         } catch {}
       }
+      this.seekDebounceTimeout = setTimeout(() => {
+        this.isSeeking = false;
+      }, 700);
     }
     this.publish();
   }

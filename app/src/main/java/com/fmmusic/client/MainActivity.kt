@@ -2074,11 +2074,27 @@ private fun NowPlayingExpandedSheet(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Scrubber Slider
+                    var isDraggingScrubber by remember { mutableStateOf(false) }
+                    var scrubFraction by remember { mutableFloatStateOf(0f) }
+
+                    val effectiveFraction = if (isDraggingScrubber) scrubFraction else state.progressFraction
+                    val effectivePositionMs = if (isDraggingScrubber) {
+                        (scrubFraction * state.durationMs).toLong()
+                    } else {
+                        state.currentPositionMs
+                    }
+
+                    // Scrubber Slider with smooth 60fps dragging and debounced seek commit
                     Slider(
-                        value = state.progressFraction,
+                        value = effectiveFraction.coerceIn(0f, 1f),
                         onValueChange = { frac ->
-                            onSeek((frac * state.durationMs).toLong())
+                            isDraggingScrubber = true
+                            scrubFraction = frac
+                        },
+                        onValueChangeFinished = {
+                            val targetMs = (scrubFraction * state.durationMs).toLong()
+                            onSeek(targetMs)
+                            isDraggingScrubber = false
                         },
                         colors = SliderDefaults.colors(
                             thumbColor = accent,
@@ -2092,7 +2108,7 @@ private fun NowPlayingExpandedSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(formatDuration(state.currentPositionMs), color = palette.textSecondary, fontSize = 12.sp)
+                        Text(formatDuration(effectivePositionMs), color = palette.textSecondary, fontSize = 12.sp)
                         Text(formatDuration(state.durationMs), color = palette.textSecondary, fontSize = 12.sp)
                     }
 

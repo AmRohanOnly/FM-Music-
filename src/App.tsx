@@ -230,6 +230,8 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<Track[] | null>(null);
   const [playerState, setPlayerState] = useState<InAppPlayerState>(inAppPlayer.getState());
   const [showNowPlayingModal, setShowNowPlayingModal] = useState(false);
+  const [modalScrubTime, setModalScrubTime] = useState<number | null>(null);
+  const [isModalScrubbing, setIsModalScrubbing] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState<'player' | 'lyrics' | 'queue'>('player');
   const [showQuickDrawer, setShowQuickDrawer] = useState<'none' | 'sleep' | 'customize'>('none');
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -2497,25 +2499,39 @@ export default function App() {
           <div className="max-w-md w-full mx-auto px-6 pb-6 space-y-3.5">
             {/* Timeline slider */}
             <div className="space-y-1.5">
-              <div className="relative w-full h-1.5 bg-[var(--fm-glass-border)] rounded-full cursor-pointer">
+              <div className="relative w-full h-2 bg-[var(--fm-glass-border)] rounded-full cursor-pointer flex items-center">
                 <div
-                  className="h-full bg-[var(--fm-accent)] rounded-full"
+                  className="h-full bg-[var(--fm-accent)] rounded-full pointer-events-none transition-[width] duration-75"
                   style={{
-                    width: `${playerState.duration ? (playerState.currentTime / playerState.duration) * 100 : 0}%`,
+                    width: `${playerState.duration ? (((isModalScrubbing && modalScrubTime !== null ? modalScrubTime : playerState.currentTime) / playerState.duration) * 100) : 0}%`,
                   }}
                 />
                 <input
                   type="range"
                   min={0}
                   max={playerState.duration || 100}
-                  value={playerState.currentTime}
-                  onChange={(e) => inAppPlayer.seekTo(Number(e.target.value))}
+                  value={(isModalScrubbing && modalScrubTime !== null ? modalScrubTime : playerState.currentTime) || 0}
+                  onMouseDown={() => setIsModalScrubbing(true)}
+                  onTouchStart={() => setIsModalScrubbing(true)}
+                  onChange={(e) => setModalScrubTime(Number(e.target.value))}
+                  onMouseUp={(e) => {
+                    const val = Number(e.currentTarget.value);
+                    inAppPlayer.seekTo(val);
+                    setIsModalScrubbing(false);
+                    setModalScrubTime(null);
+                  }}
+                  onTouchEnd={(e) => {
+                    const val = Number(e.currentTarget.value);
+                    inAppPlayer.seekTo(val);
+                    setIsModalScrubbing(false);
+                    setModalScrubTime(null);
+                  }}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   aria-label="Seek track position"
                 />
               </div>
               <div className="flex items-center justify-between text-xs text-[var(--fm-text-muted)] tabular-nums">
-                <span>{formatTime(playerState.currentTime)}</span>
+                <span>{formatTime(isModalScrubbing && modalScrubTime !== null ? modalScrubTime : playerState.currentTime)}</span>
                 <span>{formatTime(playerState.duration)}</span>
               </div>
             </div>

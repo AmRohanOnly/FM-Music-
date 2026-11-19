@@ -65,6 +65,7 @@ class ExoPlaybackManager(context: Context) {
     private var sleepTimerJob: Job? = null
     private var loadTrackJob: Job? = null
     private var retriedCurrentTrack = false
+    private var isSeeking = false
 
     init {
         player.addListener(object : Player.Listener {
@@ -298,10 +299,15 @@ class ExoPlaybackManager(context: Context) {
     fun seekTo(positionMs: Long) {
         val maxDur = if (player.duration > 0) player.duration else mutableState.value.durationMs
         val clamped = positionMs.coerceIn(0L, maxDur.coerceAtLeast(0L))
+        isSeeking = true
+        mutableState.update { it.copy(currentPositionMs = clamped) }
         if (player.mediaItemCount > 0) {
             player.seekTo(clamped)
         }
-        mutableState.update { it.copy(currentPositionMs = clamped) }
+        scope.launch {
+            delay(500L)
+            isSeeking = false
+        }
     }
 
     fun next() {
@@ -428,13 +434,15 @@ class ExoPlaybackManager(context: Context) {
         stopProgressTracker()
         progressJob = scope.launch {
             while (isActive) {
-                val pos = player.currentPosition
-                val dur = if (player.duration > 0) player.duration else mutableState.value.durationMs
-                mutableState.update {
-                    it.copy(
-                        currentPositionMs = pos,
-                        durationMs = dur
-                    )
+                if (!isSeeking) {
+                    val pos = player.currentPosition
+                    val dur = if (player.duration > 0) player.duration else mutableState.value.durationMs
+                    mutableState.update {
+                        it.copy(
+                            currentPositionMs = pos,
+                            durationMs = dur
+                        )
+                    }
                 }
                 delay(400L)
             }

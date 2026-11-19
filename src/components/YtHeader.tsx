@@ -4,7 +4,6 @@ import {
   Search,
   X,
   Settings,
-  ShieldCheck,
   Smartphone,
   Palette,
 } from 'lucide-react';
@@ -23,7 +22,7 @@ interface YtHeaderProps {
   onClearHistory: () => void;
   currentTheme: ThemeId;
   onOpenSettings: () => void;
-  onOpenDiagnostics: () => void;
+  onOpenDiagnostics?: () => void;
   updateAvailable: boolean;
   latestVersion?: string;
   onOpenUpdatePrompt: () => void;
@@ -42,7 +41,6 @@ export function YtHeader({
   onClearHistory,
   currentTheme,
   onOpenSettings,
-  onOpenDiagnostics,
   updateAvailable,
   latestVersion,
   onOpenUpdatePrompt,
@@ -214,14 +212,6 @@ export function YtHeader({
           <span className="max-w-[100px] truncate">{activeThemeMeta.name}</span>
         </button>
 
-        <button
-          onClick={onOpenDiagnostics}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-[var(--fm-text-muted)] hover:text-[var(--fm-text)] hover:bg-[var(--fm-glass)] transition-colors cursor-pointer"
-          title="Diagnostics & Network Status"
-          aria-label="Open Diagnostics"
-        >
-          <ShieldCheck className="w-4 h-4 text-[var(--fm-accent)]" />
-        </button>
 
         <button
           onClick={onOpenSettings}

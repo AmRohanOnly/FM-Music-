@@ -103,6 +103,7 @@ import com.fmmusic.client.model.PlaybackUiState
 import com.fmmusic.client.model.RepeatMode
 import com.fmmusic.client.model.UserPlaylist
 import com.fmmusic.client.playback.ExoPlaybackManager
+import com.fmmusic.client.ui.*
 import com.fmmusic.client.update.AppUpdateUiState
 import com.fmmusic.client.update.ReleaseUpdateInfo
 import kotlinx.coroutines.Dispatchers
@@ -267,11 +268,11 @@ val CuratedAccents = listOf(
 val LocalAppPalette = compositionLocalOf { AppThemes[0] }
 val LocalAccentColor = compositionLocalOf { Color(0xFFFF0000) }
 
-enum class NavigationTab(val label: String, val icon: String) {
-    HOME("Home", "🏠"),
-    EXPLORE("Explore", "🧭"),
-    LIBRARY("Library", "📚"),
-    OFFLINE("Offline", "💾")
+enum class NavigationTab(val label: String) {
+    HOME("Home"),
+    EXPLORE("Explore"),
+    LIBRARY("Library"),
+    OFFLINE("Offline")
 }
 
 // ==========================================================================================
@@ -677,63 +678,33 @@ private fun YtTopAppBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // YouTube Music Brand Badge
+            // Minimal Brand Monogram & Title
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                // Red YouTube play badge
                 Box(
                     modifier = Modifier
                         .size(34.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(accent, accent.copy(alpha = 0.8f))
-                            )
-                        ),
+                        .background(accent),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("▶", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    PlayIcon(tint = Color.White, modifier = Modifier.size(16.dp))
                 }
 
                 Spacer(Modifier.width(10.dp))
 
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "FM Music",
-                            color = palette.textPrimary,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 17.sp,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        // Version badge
-                        Surface(
-                            color = palette.surfaceCard,
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, palette.border)
-                        ) {
-                            Text(
-                                "v1.0.21",
-                                color = accent,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        if (sessionState.isInitialized) "● InnerTube Connected" else "○ In-App Streaming",
-                        color = if (sessionState.isInitialized) Color(0xFF10B981) else palette.textSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                Text(
+                    "FM Music",
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    letterSpacing = (-0.3).sp
+                )
             }
 
-            // Action Buttons
+            // Minimal Action Buttons (Theme & Settings)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -747,10 +718,10 @@ private fun YtTopAppBar(
                     contentPadding = PaddingValues(0.dp),
                     border = BorderStroke(1.dp, palette.border)
                 ) {
-                    Text("🎨", fontSize = 16.sp)
+                    PaletteIcon(tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                 }
 
-                // Diagnostics / Update Button
+                // Settings / Update Button
                 Button(
                     onClick = onOpenUpdates,
                     colors = ButtonDefaults.buttonColors(containerColor = palette.surfaceCard),
@@ -759,7 +730,7 @@ private fun YtTopAppBar(
                     contentPadding = PaddingValues(0.dp),
                     border = BorderStroke(1.dp, palette.border)
                 ) {
-                    Text("⚙", fontSize = 16.sp, color = palette.textPrimary)
+                    SettingsIcon(tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -778,7 +749,7 @@ private fun YtTopAppBar(
                 )
             },
             leadingIcon = {
-                Text("🔍", fontSize = 14.sp)
+                SearchIcon(tint = palette.textSecondary, modifier = Modifier.size(18.dp))
             },
             trailingIcon = {
                 if (currentQuery.isNotBlank()) {
@@ -838,6 +809,7 @@ private fun YtBottomNavigationBar(
         ) {
             NavigationTab.values().forEach { tab ->
                 val selected = currentTab == tab
+                val iconTint = if (selected) accent else palette.textSecondary
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
@@ -845,14 +817,16 @@ private fun YtBottomNavigationBar(
                         .clickable { onSelectTab(tab) }
                         .padding(horizontal = 14.dp, vertical = 4.dp)
                 ) {
-                    Text(
-                        tab.icon,
-                        fontSize = if (selected) 20.sp else 18.sp,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
+                    when (tab) {
+                        NavigationTab.HOME -> HomeIcon(tint = iconTint, isFilled = selected, modifier = Modifier.size(22.dp))
+                        NavigationTab.EXPLORE -> ExploreIcon(tint = iconTint, isFilled = selected, modifier = Modifier.size(22.dp))
+                        NavigationTab.LIBRARY -> LibraryIcon(tint = iconTint, isFilled = selected, modifier = Modifier.size(22.dp))
+                        NavigationTab.OFFLINE -> OfflineIcon(tint = iconTint, isFilled = selected, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         tab.label,
-                        color = if (selected) accent else palette.textSecondary,
+                        color = iconTint,
                         fontSize = 11.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
@@ -952,10 +926,10 @@ private fun YtMiniPlayerBar(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Text(
-                        if (isFavorite) "♥" else "♡",
-                        color = if (isFavorite) accent else palette.textSecondary,
-                        fontSize = 18.sp
+                    HeartIcon(
+                        tint = if (isFavorite) accent else palette.textSecondary,
+                        isFilled = isFavorite,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
@@ -973,13 +947,10 @@ private fun YtMiniPlayerBar(
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(16.dp)
                         )
+                    } else if (state.isPlaying) {
+                        PauseIcon(tint = Color.White, modifier = Modifier.size(18.dp))
                     } else {
-                        Text(
-                            if (state.isPlaying) "⏸" else "▶",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        PlayIcon(tint = Color.White, modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -992,7 +963,7 @@ private fun YtMiniPlayerBar(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Text("⏭", color = palette.textPrimary, fontSize = 16.sp)
+                    NextIcon(tint = palette.textPrimary, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -1096,7 +1067,7 @@ private fun HomeScreen(
                                 .background(accent),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("♥", color = Color.White, fontSize = 24.sp)
+                            HeartIcon(isFilled = true, tint = Color.White, modifier = Modifier.size(24.dp))
                         }
 
                         Spacer(Modifier.width(14.dp))
@@ -1115,7 +1086,7 @@ private fun HomeScreen(
                             )
                         }
 
-                        Text("➔", color = accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        NextIcon(tint = accent, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -1285,7 +1256,7 @@ private fun LibraryScreen(
                                     .background(accent),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("♥", color = Color.White, fontSize = 30.sp)
+                                HeartIcon(isFilled = true, tint = Color.White, modifier = Modifier.size(28.dp))
                             }
 
                             Spacer(Modifier.width(14.dp))
@@ -1295,7 +1266,7 @@ private fun LibraryScreen(
                                     "Liked Music",
                                     color = palette.textPrimary,
                                     fontSize = 18.sp,
-                                    fontWeight = FontWeight.ExtraBold
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     "Auto playlist • ${favoriteTracks.size} songs",
@@ -1318,7 +1289,9 @@ private fun LibraryScreen(
                                 shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("▶ Play All", color = Color.White, fontWeight = FontWeight.Bold)
+                                PlayIcon(tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Play All", color = Color.White, fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -1329,7 +1302,9 @@ private fun LibraryScreen(
                                 shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("🔀 Shuffle", color = palette.textPrimary, fontWeight = FontWeight.Bold)
+                                ShuffleIcon(tint = palette.textPrimary, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Shuffle", color = palette.textPrimary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1461,7 +1436,7 @@ private fun PlaylistItemCard(
                         cornerRadiusDp = 10
                     )
                 } else {
-                    Text("🎵", fontSize = 24.sp)
+                    LibraryIcon(isFilled = true, tint = accent, modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -1492,7 +1467,7 @@ private fun PlaylistItemCard(
                     modifier = Modifier.size(34.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
-                    Text("▶", color = Color.White, fontSize = 12.sp)
+                    PlayIcon(tint = Color.White, modifier = Modifier.size(14.dp))
                 }
                 Spacer(Modifier.width(6.dp))
             }
@@ -1514,14 +1489,14 @@ private fun PlaylistItemCard(
                     modifier = Modifier.background(palette.surface)
                 ) {
                     DropdownMenuItem(
-                        text = { Text("✏ Rename Playlist", color = palette.textPrimary) },
+                        text = { Text("Rename Playlist", color = palette.textPrimary) },
                         onClick = {
                             showMenu = false
                             onRename()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("🗑 Delete Playlist", color = Color(0xFFFF5252)) },
+                        text = { Text("Delete Playlist", color = Color(0xFFFF5252)) },
                         onClick = {
                             showMenu = false
                             onDelete()
@@ -1594,7 +1569,9 @@ private fun PlaylistDetailsScreen(
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("▶ Play All Tracks", color = Color.White, fontWeight = FontWeight.Bold)
+                    PlayIcon(tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Play All Tracks", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(16.dp))
             }
@@ -1679,7 +1656,7 @@ private fun OfflineScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("💾", fontSize = 28.sp)
+                    OfflineIcon(isFilled = true, tint = accent, modifier = Modifier.size(28.dp))
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
@@ -1706,7 +1683,9 @@ private fun OfflineScreen(
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("▶ Play All Offline Tracks", color = Color.White, fontWeight = FontWeight.Bold)
+                    PlayIcon(tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Play All Offline Tracks", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(16.dp))
             }
@@ -1801,10 +1780,10 @@ private fun TrackListItem(
                 contentPadding = PaddingValues(0.dp),
                 modifier = Modifier.size(36.dp)
             ) {
-                Text(
-                    if (isFav) "♥" else "♡",
-                    color = if (isFav) accent else palette.textSecondary,
-                    fontSize = 18.sp
+                HeartIcon(
+                    tint = if (isFav) accent else palette.textSecondary,
+                    isFilled = isFav,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -1815,7 +1794,10 @@ private fun TrackListItem(
                 contentPadding = PaddingValues(0.dp),
                 modifier = Modifier.size(36.dp)
             ) {
-                Text("➕", color = palette.textSecondary, fontSize = 14.sp)
+                PlusIcon(
+                    tint = palette.textSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
@@ -1874,7 +1856,7 @@ private fun NowPlayingExpandedSheet(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Dismiss arrow & Stream Source header
+            // Dismiss arrow & clean title
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1886,30 +1868,27 @@ private fun NowPlayingExpandedSheet(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Text("⌄", color = palette.textPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    ChevronDownIcon(tint = palette.textPrimary, modifier = Modifier.size(22.dp))
                 }
 
-                Surface(
-                    color = palette.surfaceCard,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, palette.border)
-                ) {
-                    Text(
-                        state.streamSource ?: "InnerTube Audio Stream",
-                        color = accent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
+                Text(
+                    "Now Playing",
+                    color = palette.textSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
 
+                // Sleep Timer button
                 Button(
-                    onClick = onAddToPlaylist,
+                    onClick = onOpenSleepTimer,
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Text("➕", color = palette.textPrimary, fontSize = 16.sp)
+                    TimerIcon(
+                        tint = if (state.sleepTimerMinutesRemaining != null) accent else palette.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
@@ -2007,10 +1986,10 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(42.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text(
-                                if (isFavorite) "♥" else "♡",
-                                color = if (isFavorite) accent else palette.textSecondary,
-                                fontSize = 20.sp
+                            HeartIcon(
+                                isFilled = isFavorite,
+                                tint = if (isFavorite) accent else palette.textSecondary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -2031,12 +2010,28 @@ private fun NowPlayingExpandedSheet(
                                     modifier = Modifier.size(18.dp)
                                 )
                             } else {
-                                Text(
-                                    if (isDownloaded) "✓" else "⬇",
-                                    color = if (isDownloaded) Color(0xFF10B981) else palette.textSecondary,
-                                    fontSize = 18.sp
+                                DownloadIcon(
+                                    isDownloaded = isDownloaded,
+                                    tint = if (isDownloaded) Color(0xFF10B981) else palette.textSecondary,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        // Add to Playlist Button
+                        Button(
+                            onClick = onAddToPlaylist,
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.surfaceCard),
+                            shape = CircleShape,
+                            modifier = Modifier.size(42.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            PlusIcon(
+                                tint = palette.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
 
@@ -2127,10 +2122,9 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(46.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text(
-                                "🔀",
-                                color = if (state.isShuffled) accent else palette.textSecondary,
-                                fontSize = 18.sp
+                            ShuffleIcon(
+                                tint = if (state.isShuffled) accent else palette.textSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -2142,7 +2136,7 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(52.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text("⏮", color = palette.textPrimary, fontSize = 18.sp)
+                            PrevIcon(tint = palette.textPrimary, modifier = Modifier.size(24.dp))
                         }
 
                         // Play / Pause Big Circular Button
@@ -2153,12 +2147,17 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(68.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text(
-                                if (state.isPlaying) "⏸" else "▶",
-                                color = Color.White,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            if (state.isBuffering && !state.isPlaying) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.5.dp,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            } else if (state.isPlaying) {
+                                PauseIcon(tint = Color.White, modifier = Modifier.size(30.dp))
+                            } else {
+                                PlayIcon(tint = Color.White, modifier = Modifier.size(30.dp))
+                            }
                         }
 
                         // Next
@@ -2169,7 +2168,7 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(52.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            Text("⏭", color = palette.textPrimary, fontSize = 18.sp)
+                            NextIcon(tint = palette.textPrimary, modifier = Modifier.size(24.dp))
                         }
 
                         // Repeat
@@ -2179,35 +2178,13 @@ private fun NowPlayingExpandedSheet(
                             modifier = Modifier.size(46.dp),
                             contentPadding = PaddingValues(0.dp)
                         ) {
-                            val repSymbol = when (state.repeatMode) {
-                                RepeatMode.OFF -> "🔁"
-                                RepeatMode.ALL -> "🔁"
-                                RepeatMode.ONE -> "🔂"
-                            }
-                            Text(
-                                repSymbol,
-                                color = if (state.repeatMode != RepeatMode.OFF) accent else palette.textSecondary,
-                                fontSize = 18.sp
+                            RepeatIcon(
+                                tint = if (state.repeatMode != RepeatMode.OFF) accent else palette.textSecondary.copy(alpha = 0.6f),
+                                isOne = state.repeatMode == RepeatMode.ONE,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
-
-                    Spacer(Modifier.height(20.dp))
-
-                    // Secondary Tools Row (Sleep Timer)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        OutlinedButton(
-                            onClick = onOpenSleepTimer,
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, palette.border),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = palette.textPrimary)
-                        ) {
-                            val timerText = state.sleepTimerMinutesRemaining?.let { "⏳ Timer: ${it}m" } ?: "⏳ Sleep Timer"
-                            Text(timerText, fontSize = 12.sp, color = if (state.sleepTimerMinutesRemaining != null) accent else palette.textPrimary)
-                        }
                     }
                 }
                 1 -> {
@@ -2322,9 +2299,9 @@ private fun ThemeCustomizationDialog(
         containerColor = palette.surface,
         title = {
             Text(
-                "🎨 Themes & Customizations",
+                "Themes & Display",
                 color = palette.textPrimary,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
         },
@@ -2479,7 +2456,7 @@ private fun CreatePlaylistDialog(
         onDismissRequest = onDismiss,
         containerColor = palette.surface,
         title = {
-            Text("➕ Create New Playlist", color = palette.textPrimary, fontWeight = FontWeight.Bold)
+            Text("Create New Playlist", color = palette.textPrimary, fontWeight = FontWeight.Bold)
         },
         text = {
             Column {
@@ -2633,7 +2610,7 @@ private fun AddToPlaylistDialog(
                             modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🎵", fontSize = 18.sp)
+                            LibraryIcon(isFilled = true, tint = accent, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(pl.name, color = palette.textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -2716,7 +2693,7 @@ private fun SleepTimerDialog(
         onDismissRequest = onDismiss,
         containerColor = palette.surface,
         title = {
-            Text("⏳ Sleep Timer", color = palette.textPrimary, fontWeight = FontWeight.Bold)
+            Text("Sleep Timer", color = palette.textPrimary, fontWeight = FontWeight.Bold)
         },
         text = {
             Column {
@@ -2955,7 +2932,7 @@ private fun TrackArtworkImage(
                     .background(Color.Black.copy(alpha = 0.35f)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("▶", color = accent, fontSize = 14.sp)
+                PlayIcon(tint = accent, modifier = Modifier.size(16.dp))
             }
         }
     }

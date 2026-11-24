@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.fmmusic.client.MusicApplication
@@ -40,10 +41,14 @@ class ExoPlaybackManager(context: Context) {
         .setAllowCrossProtocolRedirects(true)
 
     private val upstreamDataSourceFactory = DefaultDataSource.Factory(appContext, httpDataSourceFactory)
-    private val dataSourceFactory = BoundedRangeDataSourceFactory(upstreamDataSourceFactory)
+    private val boundedDataSourceFactory = BoundedRangeDataSourceFactory(upstreamDataSourceFactory)
+    private val cacheDataSourceFactory = CacheDataSource.Factory()
+        .setCache(MusicApplication.instance.mediaCache)
+        .setUpstreamDataSourceFactory(boundedDataSourceFactory)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     private val player: ExoPlayer = ExoPlayer.Builder(appContext)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
@@ -56,6 +61,9 @@ class ExoPlaybackManager(context: Context) {
                 true
             )
         }
+
+    val exoPlayer: ExoPlayer
+        get() = player
 
     private val mutableState = MutableStateFlow(PlaybackUiState())
     val state = mutableState.asStateFlow()
@@ -97,11 +105,18 @@ class ExoPlaybackManager(context: Context) {
 
             override fun onPlayerError(error: PlaybackException) {
                 val track = mutableState.value.currentTrack
+                val currentPos = player.currentPosition.coerceAtLeast(mutableState.value.currentPositionMs)
                 if (!retriedCurrentTrack && track != null) {
                     retriedCurrentTrack = true
                     val vid = track.youtubeId.ifBlank { track.id }
                     MusicApplication.instance.innerTubeService.invalidateStream(vid)
-                    playTrack(track, mutableState.value.queue, preserveRetryFlag = true, forceAlternative = true)
+                    playTrack(
+                        track,
+                        mutableState.value.queue,
+                        preserveRetryFlag = true,
+                        forceAlternative = true,
+                        initialPositionMs = currentPos
+                    )
                     return
                 }
 
@@ -120,7 +135,8 @@ class ExoPlaybackManager(context: Context) {
         track: MusicTrack,
         queueList: List<MusicTrack>? = null,
         preserveRetryFlag: Boolean = false,
-        forceAlternative: Boolean = false
+        forceAlternative: Boolean = false,
+        initialPositionMs: Long = 0L
     ) {
         if (!preserveRetryFlag) {
             retriedCurrentTrack = false
@@ -156,7 +172,7 @@ class ExoPlaybackManager(context: Context) {
                 isBuffering = true,
                 errorMessage = null,
                 durationMs = track.durationSeconds * 1000L,
-                currentPositionMs = 0L
+                currentPositionMs = initialPositionMs
             )
         }
 
@@ -177,6 +193,9 @@ class ExoPlaybackManager(context: Context) {
             }
             player.setMediaItem(mediaItem)
             player.prepare()
+            if (initialPositionMs > 0L) {
+                player.seekTo(initialPositionMs)
+            }
             player.play()
             mutableState.update {
                 it.copy(
@@ -221,8 +240,12 @@ class ExoPlaybackManager(context: Context) {
                     .setDefaultRequestProperties(extraHeaders)
 
                 val trackUpstreamFactory = DefaultDataSource.Factory(appContext, trackHttpFactory)
-                val trackDataSourceFactory = BoundedRangeDataSourceFactory(trackUpstreamFactory)
-                val mediaSourceFactory = DefaultMediaSourceFactory(trackDataSourceFactory)
+                val trackBoundedFactory = BoundedRangeDataSourceFactory(trackUpstreamFactory)
+                val trackCacheFactory = CacheDataSource.Factory()
+                    .setCache(MusicApplication.instance.mediaCache)
+                    .setUpstreamDataSourceFactory(trackBoundedFactory)
+                    .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                val mediaSourceFactory = DefaultMediaSourceFactory(trackCacheFactory)
                 val mediaSource = mediaSourceFactory.createMediaSource(mediaItem)
 
                 player.repeatMode = if (mutableState.value.repeatMode == RepeatMode.ONE) {
@@ -232,6 +255,9 @@ class ExoPlaybackManager(context: Context) {
                 }
                 player.setMediaSource(mediaSource)
                 player.prepare()
+                if (initialPositionMs > 0L) {
+                    player.seekTo(initialPositionMs)
+                }
                 player.play()
 
                 mutableState.update {

@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -522,5 +523,49 @@ fun TimerIcon(
 
         // Clock hand
         drawLine(color = tint, start = Offset(w * 0.50f, h * 0.54f), end = Offset(w * 0.66f, h * 0.42f), strokeWidth = strokeW, cap = StrokeCap.Round)
+    }
+}
+
+/**
+ * Official FM Music Eighth-Note Brand Logo
+ * Rendered using precision vector path with hollow note head and curved flag.
+ */
+@Composable
+fun MusicNoteLogo(
+    modifier: Modifier = Modifier.size(24.dp),
+    tint: Color = Color.White
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            fillType = PathFillType.EvenOdd
+
+            // Outer contour of the eighth note
+            moveTo(w * 0.523f, h * 0.222f)
+            cubicTo(w * 0.523f, h * 0.222f, w * 0.542f, h * 0.287f, w * 0.593f, h * 0.343f)
+            cubicTo(w * 0.639f, h * 0.394f, w * 0.699f, h * 0.426f, w * 0.704f, h * 0.509f)
+            cubicTo(w * 0.708f, h * 0.565f, w * 0.685f, h * 0.593f, w * 0.676f, h * 0.597f)
+            cubicTo(w * 0.667f, h * 0.597f, w * 0.667f, h * 0.574f, w * 0.653f, h * 0.523f)
+            cubicTo(w * 0.634f, h * 0.458f, w * 0.583f, h * 0.412f, w * 0.551f, h * 0.384f)
+            lineTo(w * 0.551f, h * 0.628f)
+            cubicTo(w * 0.537f, h * 0.619f, w * 0.514f, h * 0.609f, w * 0.481f, h * 0.604f)
+            cubicTo(w * 0.398f, h * 0.589f, w * 0.319f, h * 0.628f, w * 0.306f, h * 0.690f)
+            cubicTo(w * 0.292f, h * 0.752f, w * 0.347f, h * 0.813f, w * 0.431f, h * 0.828f)
+            cubicTo(w * 0.514f, h * 0.843f, w * 0.581f, h * 0.807f, w * 0.595f, h * 0.745f)
+            cubicTo(w * 0.600f, h * 0.722f, w * 0.597f, h * 0.696f, w * 0.588f, h * 0.671f)
+            lineTo(w * 0.588f, h * 0.278f)
+            cubicTo(w * 0.588f, h * 0.250f, w * 0.583f, h * 0.222f, w * 0.523f, h * 0.222f)
+            close()
+
+            // Inner hole for the hollow note head
+            moveTo(w * 0.449f, h * 0.650f)
+            cubicTo(w * 0.495f, h * 0.658f, w * 0.532f, h * 0.693f, w * 0.525f, h * 0.727f)
+            cubicTo(w * 0.518f, h * 0.761f, w * 0.469f, h * 0.782f, w * 0.422f, h * 0.774f)
+            cubicTo(w * 0.376f, h * 0.766f, w * 0.350f, h * 0.731f, w * 0.357f, h * 0.697f)
+            cubicTo(w * 0.365f, h * 0.663f, w * 0.403f, h * 0.642f, w * 0.449f, h * 0.650f)
+            close()
+        }
+        drawPath(path, color = tint, style = Fill)
     }
 }

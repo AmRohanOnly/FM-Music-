@@ -23,9 +23,26 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import android.content.Intent
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import com.fmmusic.client.playback.PlaybackService
 
+@OptIn(UnstableApi::class)
 class MusicApplication : Application() {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    val mediaCache: SimpleCache by lazy {
+        val databaseProvider = StandaloneDatabaseProvider(this)
+        val cacheFolder = File(cacheDir, "media_cache")
+        if (!cacheFolder.exists()) {
+            cacheFolder.mkdirs()
+        }
+        SimpleCache(cacheFolder, LeastRecentlyUsedCacheEvictor(256 * 1024 * 1024L), databaseProvider)
+    }
 
     lateinit var playbackManager: ExoPlaybackManager
         private set
@@ -67,6 +84,10 @@ class MusicApplication : Application() {
         loadPreferences()
 
         playbackManager = ExoPlaybackManager(this)
+        try {
+            val serviceIntent = Intent(this, PlaybackService::class.java)
+            startService(serviceIntent)
+        } catch (_: Exception) {}
         innerTubeService = InnerTubeClientService(appScope)
         updateManager = AppUpdateManager(this, appScope)
         updateManager.checkForUpdates(forceManual = false)

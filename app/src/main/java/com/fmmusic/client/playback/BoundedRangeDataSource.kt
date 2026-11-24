@@ -10,10 +10,11 @@ import androidx.media3.datasource.TransferListener
 
 /**
  * A custom Media3 [DataSource] that partitions requests to googlevideo.com into bounded
- * range chunks (default 512 KB).
+ * range chunks (256 KB).
  *
  * YouTube's CDN rejects unbounded requests (Range: bytes=0- or missing Range) with HTTP 403 Forbidden.
- * By enforcing bounded ranges for every chunk request, playback streams seamlessly without 403 errors.
+ * By enforcing bounded ranges for every chunk request, playback streams seamlessly without 403 errors,
+ * and tracks play to completion without premature termination or seek crashes.
  */
 @OptIn(UnstableApi::class)
 class BoundedRangeDataSource(
@@ -69,7 +70,7 @@ class BoundedRangeDataSource(
         val openedBytes = upstream.open(firstChunkSpec)
         bytesRemainingInCurrentChunk = if (openedBytes > 0) openedBytes else firstChunkLength
 
-        // Parse total stream length from Content-Range header (e.g. bytes 0-524287/3309654)
+        // Parse total stream length from Content-Range header (e.g. bytes 0-262143/4557665)
         val responseHeaders = upstream.responseHeaders
         val contentRangeList = responseHeaders["Content-Range"] ?: responseHeaders["content-range"]
         val contentRangeHeader = contentRangeList?.firstOrNull()
@@ -81,7 +82,7 @@ class BoundedRangeDataSource(
         return if (bytesToReadTotal != C.LENGTH_UNSET.toLong()) {
             bytesToReadTotal
         } else if (totalStreamLength != C.LENGTH_UNSET.toLong()) {
-            totalStreamLength - currentPosition
+            (totalStreamLength - currentPosition).coerceAtLeast(0L)
         } else {
             C.LENGTH_UNSET.toLong()
         }
@@ -128,11 +129,35 @@ class BoundedRangeDataSource(
                 .setLength(nextChunkLength)
                 .build()
 
-            val nextUpstream = upstreamFactory.createDataSource()
-            listeners.forEach { nextUpstream.addTransferListener(it) }
-            currentUpstream = nextUpstream
-            val chunkOpened = nextUpstream.open(nextSpec)
-            bytesRemainingInCurrentChunk = if (chunkOpened > 0) chunkOpened else nextChunkLength
+            var attempts = 0
+            var opened = false
+
+            while (attempts < 3 && !opened) {
+                attempts++
+                try {
+                    val nextUpstream = upstreamFactory.createDataSource()
+                    listeners.forEach { nextUpstream.addTransferListener(it) }
+                    val chunkOpened = nextUpstream.open(nextSpec)
+                    currentUpstream = nextUpstream
+                    bytesRemainingInCurrentChunk = if (chunkOpened > 0) chunkOpened else nextChunkLength
+                    opened = true
+
+                    if (totalStreamLength == C.LENGTH_UNSET.toLong()) {
+                        val respHeaders = nextUpstream.responseHeaders
+                        val crList = respHeaders["Content-Range"] ?: respHeaders["content-range"]
+                        val cr = crList?.firstOrNull()
+                        if (!cr.isNullOrBlank() && cr.contains("/")) {
+                            val totalStr = cr.substringAfter("/").trim()
+                            totalStreamLength = totalStr.toLongOrNull() ?: C.LENGTH_UNSET.toLong()
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (attempts >= 3) throw e
+                    try {
+                        Thread.sleep(100L * attempts)
+                    } catch (_: InterruptedException) {}
+                }
+            }
         }
 
         val toRead = minOf(length.toLong(), bytesRemainingInCurrentChunk).toInt()
@@ -142,8 +167,11 @@ class BoundedRangeDataSource(
             bytesRemainingInCurrentChunk -= bytesRead
             currentPosition += bytesRead
         } else if (bytesRead == C.RESULT_END_OF_INPUT) {
+            // End of this chunk: do NOT declare entire stream finished unless totalStreamLength is reached
             bytesRemainingInCurrentChunk = 0L
-            totalStreamLength = currentPosition
+            if (totalStreamLength != C.LENGTH_UNSET.toLong() && currentPosition >= totalStreamLength) {
+                return C.RESULT_END_OF_INPUT
+            }
         }
 
         return bytesRead
@@ -167,7 +195,7 @@ class BoundedRangeDataSource(
     }
 
     companion object {
-        const val DEFAULT_CHUNK_SIZE: Long = 512 * 1024L // 512 KB bounded chunk
+        const val DEFAULT_CHUNK_SIZE: Long = 256 * 1024L // 256 KB bounded chunk
     }
 }
 

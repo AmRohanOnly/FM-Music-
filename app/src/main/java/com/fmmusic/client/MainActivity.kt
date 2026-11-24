@@ -5,13 +5,20 @@ import android.os.Bundle
 import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode as AnimRepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -85,6 +92,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -460,74 +468,82 @@ private fun ModernMusicAppRoot(playbackManager: ExoPlaybackManager) {
                     currentQuery = searchQuery
                 )
 
-                // Tab Content
+                // Tab Content with smooth animated transition
                 Box(modifier = Modifier.weight(1f)) {
-                    when (currentTab) {
-                        NavigationTab.HOME -> {
-                            HomeScreen(
-                                onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
-                                onToggleFavorite = { app.toggleFavorite(it) },
-                                onAddToPlaylist = { showAddToPlaylistDialogForTrack = it },
-                                isFavorite = { app.isFavorite(it) },
-                                onGoToLiked = { currentTab = NavigationTab.LIBRARY }
-                            )
-                        }
-                        NavigationTab.EXPLORE -> {
-                            ExploreScreen(
-                                searchQuery = searchQuery,
-                                onSearchQueryChange = { searchQuery = it },
-                                isSearching = isSearching,
-                                searchResults = searchResults,
-                                onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
-                                onToggleFavorite = { app.toggleFavorite(it) },
-                                onAddToPlaylist = { showAddToPlaylistDialogForTrack = it },
-                                isFavorite = { app.isFavorite(it) }
-                            )
-                        }
-                        NavigationTab.LIBRARY -> {
-                            if (activePlaylistDetails != null) {
-                                PlaylistDetailsScreen(
-                                    playlist = activePlaylistDetails!!,
-                                    onBack = { activePlaylistDetails = null },
+                    AnimatedContent(
+                        targetState = currentTab,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+                        },
+                        label = "mainTabTransition"
+                    ) { activeTab ->
+                        when (activeTab) {
+                            NavigationTab.HOME -> {
+                                HomeScreen(
                                     onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
-                                    onRemoveTrack = { tId ->
-                                        app.removeTrackFromPlaylist(activePlaylistDetails!!.id, tId)
-                                        activePlaylistDetails = app.playlists.value.firstOrNull { it.id == activePlaylistDetails!!.id }
-                                    },
                                     onToggleFavorite = { app.toggleFavorite(it) },
-                                    isFavorite = { app.isFavorite(it) }
-                                )
-                            } else {
-                                LibraryScreen(
-                                    favoriteTracks = favoriteTracksMap.values.toList(),
-                                    playlists = playlists,
-                                    onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
-                                    onPlayAllLiked = {
-                                        val list = favoriteTracksMap.values.toList()
-                                        if (list.isNotEmpty()) playbackManager.playTrack(list.first(), list)
-                                    },
-                                    onShuffleAllLiked = {
-                                        val list = favoriteTracksMap.values.toList()
-                                        if (list.isNotEmpty()) {
-                                            playbackManager.toggleShuffle(true)
-                                            playbackManager.playTrack(list.shuffled().first(), list)
-                                        }
-                                    },
-                                    onCreateNewPlaylist = { showNewPlaylistDialog = true },
-                                    onOpenPlaylist = { activePlaylistDetails = it },
-                                    onRenamePlaylist = { playlistToRename = it },
-                                    onDeletePlaylist = { app.deletePlaylist(it.id) },
-                                    onToggleFavorite = { app.toggleFavorite(it) }
+                                    onAddToPlaylist = { showAddToPlaylistDialogForTrack = it },
+                                    isFavorite = { app.isFavorite(it) },
+                                    onGoToLiked = { currentTab = NavigationTab.LIBRARY }
                                 )
                             }
-                        }
-                        NavigationTab.OFFLINE -> {
-                            OfflineScreen(
-                                downloads = downloads,
-                                downloading = downloading,
-                                onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
-                                onToggleDownload = { app.toggleDownload(it) }
-                            )
+                            NavigationTab.EXPLORE -> {
+                                ExploreScreen(
+                                    searchQuery = searchQuery,
+                                    onSearchQueryChange = { searchQuery = it },
+                                    isSearching = isSearching,
+                                    searchResults = searchResults,
+                                    onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
+                                    onToggleFavorite = { app.toggleFavorite(it) },
+                                    onAddToPlaylist = { showAddToPlaylistDialogForTrack = it },
+                                    isFavorite = { app.isFavorite(it) }
+                                )
+                            }
+                            NavigationTab.LIBRARY -> {
+                                if (activePlaylistDetails != null) {
+                                    PlaylistDetailsScreen(
+                                        playlist = activePlaylistDetails!!,
+                                        onBack = { activePlaylistDetails = null },
+                                        onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
+                                        onRemoveTrack = { tId ->
+                                            app.removeTrackFromPlaylist(activePlaylistDetails!!.id, tId)
+                                            activePlaylistDetails = app.playlists.value.firstOrNull { it.id == activePlaylistDetails!!.id }
+                                        },
+                                        onToggleFavorite = { app.toggleFavorite(it) },
+                                        isFavorite = { app.isFavorite(it) }
+                                    )
+                                } else {
+                                    LibraryScreen(
+                                        favoriteTracks = favoriteTracksMap.values.toList(),
+                                        playlists = playlists,
+                                        onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
+                                        onPlayAllLiked = {
+                                            val list = favoriteTracksMap.values.toList()
+                                            if (list.isNotEmpty()) playbackManager.playTrack(list.first(), list)
+                                        },
+                                        onShuffleAllLiked = {
+                                            val list = favoriteTracksMap.values.toList()
+                                            if (list.isNotEmpty()) {
+                                                playbackManager.toggleShuffle(true)
+                                                playbackManager.playTrack(list.shuffled().first(), list)
+                                            }
+                                        },
+                                        onCreateNewPlaylist = { showNewPlaylistDialog = true },
+                                        onOpenPlaylist = { activePlaylistDetails = it },
+                                        onRenamePlaylist = { playlistToRename = it },
+                                        onDeletePlaylist = { app.deletePlaylist(it.id) },
+                                        onToggleFavorite = { app.toggleFavorite(it) }
+                                    )
+                                }
+                            }
+                            NavigationTab.OFFLINE -> {
+                                OfflineScreen(
+                                    downloads = downloads,
+                                    downloading = downloading,
+                                    onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
+                                    onToggleDownload = { app.toggleDownload(it) }
+                                )
+                            }
                         }
                     }
                 }
@@ -690,7 +706,7 @@ private fun YtTopAppBar(
                         .background(accent),
                     contentAlignment = Alignment.Center
                 ) {
-                    PlayIcon(tint = Color.White, modifier = Modifier.size(16.dp))
+                    MusicNoteLogo(tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
                 Spacer(Modifier.width(10.dp))
@@ -1834,6 +1850,15 @@ private fun NowPlayingExpandedSheet(
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Track", "Lyrics", "Queue")
 
+    val albumScale by animateFloatAsState(
+        targetValue = if (state.isPlaying) 1.0f else 0.92f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "albumArtScale"
+    )
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1924,16 +1949,24 @@ private fun NowPlayingExpandedSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            when (selectedTab) {
-                0 -> {
-                    // Large Artwork
-                    Box(
-                        modifier = Modifier
-                            .size(260.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(palette.surfaceCard),
-                        contentAlignment = Alignment.Center
-                    ) {
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(160))
+                },
+                label = "sheetTabAnimation"
+            ) { activeTab ->
+                when (activeTab) {
+                    0 -> {
+                        // Large Artwork with spring scale animation
+                        Box(
+                            modifier = Modifier
+                                .size(260.dp)
+                                .scale(albumScale)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(palette.surfaceCard),
+                            contentAlignment = Alignment.Center
+                        ) {
                         TrackArtworkImage(
                             track = state.currentTrack,
                             modifier = Modifier.fillMaxSize(),
@@ -2276,6 +2309,7 @@ private fun NowPlayingExpandedSheet(
             }
         }
     }
+}
 }
 
 // ==========================================================================================

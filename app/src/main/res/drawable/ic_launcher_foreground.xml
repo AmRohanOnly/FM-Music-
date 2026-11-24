@@ -1,42 +1,33 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Radio Wave Arc 1 -->
+    
+    <!-- Eighth Note Glyph matching user logo -->
     <path
-        android:strokeColor="#B9F36A"
-        android:strokeWidth="2.5"
-        android:strokeAlpha="0.4"
-        android:strokeLineCap="round"
-        android:pathData="M 28,45 A 26,26 0 0,1 80,45" />
-
-    <!-- Radio Wave Arc 2 -->
-    <path
-        android:strokeColor="#B9F36A"
-        android:strokeWidth="3.0"
-        android:strokeAlpha="0.8"
-        android:strokeLineCap="round"
-        android:pathData="M 36,49 A 18,18 0 0,1 72,49" />
-
-    <!-- Center Badge -->
-    <path
-        android:fillColor="#B9F36A"
-        android:pathData="M 35,52 h 38 a 6,6 0 0 1 6,6 v 18 a 6,6 0 0 1 -6,6 h -38 a 6,6 0 0 1 -6,-6 v -18 a 6,6 0 0 1 6,-6 z" />
-
-    <!-- F Monogram inside Badge -->
-    <path
-        android:fillColor="#111116"
-        android:pathData="M 43,58 h 9 v 3 h -6 v 3 h 5 v 3 h -5 v 6 h -3 z" />
-
-    <!-- M Monogram inside Badge -->
-    <path
-        android:fillColor="#111116"
-        android:pathData="M 55,58 h 3 l 3,6 3,-6 h 3 v 15 h -3 v -9 l -3,6 h -1 l -3,-6 v 9 h -2 z" />
-
-    <!-- Sound frequency bars -->
-    <path
-        android:fillColor="#B9F36A"
-        android:pathData="M 38,88 h 2.5 v 6 h -2.5 z M 43,84 h 2.5 v 10 h -2.5 z M 48,81 h 2.5 v 13 h -2.5 z M 53,85 h 2.5 v 9 h -2.5 z M 58,80 h 2.5 v 14 h -2.5 z M 63,84 h 2.5 v 10 h -2.5 z M 68,88 h 2.5 v 6 h -2.5 z" />
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="
+            M 56.5,24
+            C 56.5,24 58.5,31 64,37
+            C 69,42.5 75.5,46 76,55
+            C 76.5,61 74,64 73,64.5
+            C 72,64.5 72,62 70.5,56.5
+            C 68.5,49.5 63,44.5 59.5,41.5
+            L 59.5,67.8
+            C 58,66.8 55.5,65.8 52,65.2
+            C 43,63.6 34.5,67.8 33,74.5
+            C 31.5,81.2 37.5,87.8 46.5,89.4
+            C 55.5,91 62.8,87.2 64.3,80.5
+            C 64.8,78 64.5,75.2 63.5,72.5
+            L 63.5,30
+            C 63.5,27 63,24 56.5,24 Z
+            
+            M 48.5,70.2
+            C 53.5,71.1 57.5,74.8 56.7,78.5
+            C 55.9,82.2 50.6,84.5 45.6,83.6
+            C 40.6,82.7 37.8,79 38.6,75.3
+            C 39.4,71.6 43.5,69.3 48.5,70.2 Z
+        " />
 </vector>

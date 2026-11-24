@@ -512,17 +512,24 @@ class InnerTubeClientService(private val scope: CoroutineScope) {
                 if (mime.startsWith("audio/")) {
                     val url = fmt["url"]?.jsonPrimitive?.content
                     if (!url.isNullOrBlank() && url.startsWith("http")) {
+                        val itag = fmt["itag"]?.jsonPrimitive?.content?.toIntOrNull()
+                        // Filter out known restricted itags (139, 249, 599, 600) that trigger 403 on seeking/ranges
+                        if (itag in setOf(139, 249, 599, 600)) {
+                            continue
+                        }
+
                         val bitrate = fmt["bitrate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
                         val contentLength = fmt["contentLength"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-                        // Prefer m4a/mp4 slightly for universal Media3 hardware compatibility
-                        val containerBonus = if (mime.contains("mp4", ignoreCase = true)) 15000 else 0
-                        val score = bitrate + containerBonus
+                        // Heavily bonus proven seekable itags (140 = 128k AAC mp4, 251 = 160k Opus)
+                        val itagBonus = if (itag == 140) 80000 else if (itag == 251) 60000 else 0
+                        val containerBonus = if (mime.contains("mp4", ignoreCase = true)) 20000 else 0
+                        val score = bitrate + containerBonus + itagBonus
                         if (score >= bestScore) {
                             bestScore = score
                             bestBitrate = bitrate
                             bestUrl = url
                             bestMime = mime
-                            bestItag = fmt["itag"]?.jsonPrimitive?.content?.toIntOrNull()
+                            bestItag = itag
                             bestContentLength = contentLength
                         }
                     }

@@ -1958,15 +1958,19 @@ private fun NowPlayingExpandedSheet(
             ) { activeTab ->
                 when (activeTab) {
                     0 -> {
-                        // Large Artwork with spring scale animation
-                        Box(
-                            modifier = Modifier
-                                .size(260.dp)
-                                .scale(albumScale)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(palette.surfaceCard),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            // Large Artwork with spring scale animation
+                            Box(
+                                modifier = Modifier
+                                    .size(260.dp)
+                                    .scale(albumScale)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(palette.surfaceCard),
+                                contentAlignment = Alignment.Center
+                            ) {
                         TrackArtworkImage(
                             track = state.currentTrack,
                             modifier = Modifier.fillMaxSize(),
@@ -2219,7 +2223,8 @@ private fun NowPlayingExpandedSheet(
                         }
                     }
                 }
-                1 -> {
+            }
+            1 -> {
                     // Lyrics View
                     val lyrics = state.currentTrack?.lyrics.orEmpty()
                     if (lyrics.isEmpty()) {

@@ -1,10 +1,23 @@
 package com.fmmusic.client
 
+import android.Manifest
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.fmmusic.client.playback.PlaybackService
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
@@ -288,14 +301,35 @@ enum class NavigationTab(val label: String) {
 // ==========================================================================================
 
 class MainActivity : ComponentActivity() {
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var mediaController: MediaController? = null
+    private val notificationPermissionGranted = mutableStateOf(true)
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationPermissionGranted.value = granted
+        if (granted && (application as MusicApplication).playbackManager.state.value.hasMedia) {
+            try {
+                startService(Intent(this, PlaybackService::class.java))
+            } catch (_: Exception) {}
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as MusicApplication
         val playbackManager = app.playbackManager
 
+        notificationPermissionGranted.value = isNotificationPermissionGranted()
+        if (!notificationPermissionGranted.value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         setContent {
             val themeId by app.currentThemeId.collectAsState()
             val accentHex by app.currentAccentHex.collectAsState()
+            val notificationsAllowed by notificationPermissionGranted
 
             val palette = remember(themeId) {
                 AppThemes.firstOrNull { it.id == themeId } ?: AppThemes[0]
@@ -343,11 +377,79 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = palette.background
                     ) {
-                        ModernMusicAppRoot(playbackManager)
+                        ModernMusicAppRoot(
+                            playbackManager = playbackManager,
+                            notificationsAllowed = notificationsAllowed,
+                            onEnableNotifications = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    openAppNotificationSettings()
+                                }
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        notificationPermissionGranted.value = isNotificationPermissionGranted()
+        connectMediaController()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        notificationPermissionGranted.value = isNotificationPermissionGranted()
+    }
+
+    override fun onStop() {
+        mediaController = null
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
+        super.onStop()
+    }
+
+    private fun connectMediaController() {
+        if (controllerFuture != null) return
+        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        val future = MediaController.Builder(this, sessionToken).buildAsync()
+        controllerFuture = future
+        future.addListener({
+            try {
+                mediaController = future.get()
+            } catch (_: Exception) {}
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun isNotificationPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    private fun openAppNotificationSettings() {
+        try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+            }
+            startActivity(intent)
+        } catch (_: Exception) {}
     }
 }
 
@@ -357,7 +459,11 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModernMusicAppRoot(playbackManager: ExoPlaybackManager) {
+private fun ModernMusicAppRoot(
+    playbackManager: ExoPlaybackManager,
+    notificationsAllowed: Boolean = true,
+    onEnableNotifications: () -> Unit = {}
+) {
     val app = MusicApplication.instance
     val palette = LocalAppPalette.current
     val accent = LocalAccentColor.current
@@ -595,6 +701,8 @@ private fun ModernMusicAppRoot(playbackManager: ExoPlaybackManager) {
     if (showUpdateDialog) {
         AppUpdateSettingsDialog(
             state = updateState,
+            notificationsAllowed = notificationsAllowed,
+            onEnableNotifications = onEnableNotifications,
             onSaveRepo = { updateManager.setGithubRepo(it) },
             onCheckNow = { updateManager.checkForUpdates(forceManual = true) },
             onOpenAvailableUpdate = { updateState.availableUpdate?.let { updateManager.downloadAndInstallUpdate(it) } },
@@ -2788,6 +2896,8 @@ private fun SleepTimerDialog(
 @Composable
 private fun AppUpdateSettingsDialog(
     state: AppUpdateUiState,
+    notificationsAllowed: Boolean = true,
+    onEnableNotifications: () -> Unit = {},
     onSaveRepo: (String) -> Unit,
     onCheckNow: () -> Unit,
     onOpenAvailableUpdate: () -> Unit,
@@ -2806,6 +2916,39 @@ private fun AppUpdateSettingsDialog(
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (!notificationsAllowed) {
+                    Surface(
+                        color = accent.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "Playback notification disabled",
+                                color = palette.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Allow notifications so music controls appear in your notification panel and lock screen.",
+                                color = palette.textSecondary,
+                                fontSize = 11.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = onEnableNotifications,
+                                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Enable Notifications", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 Text(
                     "Installed Version: v${state.currentVersionName} (Build ${state.currentVersionCode})",
                     color = accent,

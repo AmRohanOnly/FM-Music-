@@ -1,6 +1,7 @@
 package com.fmmusic.client.playback
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -103,6 +104,18 @@ class ExoPlaybackManager(context: Context) {
                 }
             }
 
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (!isSeeking) {
+                    mutableState.update {
+                        it.copy(currentPositionMs = newPosition.positionMs.coerceAtLeast(0L))
+                    }
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 val track = mutableState.value.currentTrack
                 val currentPos = player.currentPosition.coerceAtLeast(mutableState.value.currentPositionMs)
@@ -142,6 +155,7 @@ class ExoPlaybackManager(context: Context) {
             retriedCurrentTrack = false
         }
         loadTrackJob?.cancel()
+        ensurePlaybackServiceStarted()
 
         val incomingQueue = queueList ?: if (mutableState.value.queue.any { it.id == track.id }) {
             mutableState.value.queue
@@ -290,11 +304,24 @@ class ExoPlaybackManager(context: Context) {
             .setTitle(track.title)
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
+            .setDisplayTitle(track.title)
+            .setSubtitle(track.artist)
+            .setDescription(track.album)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
         val thumb = track.resolvedThumbnailUrl
         if (thumb.isNotBlank()) {
             builder.setArtworkUri(Uri.parse(thumb))
         }
         return builder.build()
+    }
+
+    private fun ensurePlaybackServiceStarted() {
+        try {
+            appContext.startService(Intent(appContext, PlaybackService::class.java))
+        } catch (_: Exception) {
+            // Ignored if OS restricts background start; MediaController binding or active foreground service handles it.
+        }
     }
 
     fun retryCurrentTrack() {
@@ -316,6 +343,7 @@ class ExoPlaybackManager(context: Context) {
         if (player.isPlaying) {
             player.pause()
         } else if (player.mediaItemCount > 0) {
+            ensurePlaybackServiceStarted()
             player.play()
         } else {
             retryCurrentTrack()

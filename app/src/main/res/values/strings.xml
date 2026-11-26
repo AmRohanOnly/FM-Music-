@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">FM Music</string>
+    <string name="notification_channel_name">FM Music Playback</string>
 </resources>

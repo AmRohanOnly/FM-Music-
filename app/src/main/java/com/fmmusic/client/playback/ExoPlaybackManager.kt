@@ -73,7 +73,9 @@ class ExoPlaybackManager(context: Context) {
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var loadTrackJob: Job? = null
-    private var retriedCurrentTrack = false
+    private var suggestionsJob: Job? = null
+    private val failedSourcesForTrack = mutableSetOf<String>()
+    private var retryCountForTrack = 0
     private var isSeeking = false
 
     init {
@@ -97,9 +99,7 @@ class ExoPlaybackManager(context: Context) {
                     )
                 }
 
-                if (playbackState == Player.STATE_READY) {
-                    retriedCurrentTrack = false
-                } else if (playbackState == Player.STATE_ENDED) {
+                if (playbackState == Player.STATE_ENDED) {
                     handleTrackEnded()
                 }
             }
@@ -119,16 +119,22 @@ class ExoPlaybackManager(context: Context) {
             override fun onPlayerError(error: PlaybackException) {
                 val track = mutableState.value.currentTrack
                 val currentPos = player.currentPosition.coerceAtLeast(mutableState.value.currentPositionMs)
-                if (!retriedCurrentTrack && track != null) {
-                    retriedCurrentTrack = true
+                val failedSource = mutableState.value.streamSource
+                if (!failedSource.isNullOrBlank()) {
+                    failedSourcesForTrack.add(failedSource)
+                }
+
+                if (retryCountForTrack < MAX_STREAM_RETRIES && track != null) {
+                    retryCountForTrack++
                     val vid = track.youtubeId.ifBlank { track.id }
                     MusicApplication.instance.innerTubeService.invalidateStream(vid)
                     playTrack(
-                        track,
-                        mutableState.value.queue,
-                        preserveRetryFlag = true,
+                        track = track,
+                        queueList = mutableState.value.queue,
+                        isRetry = true,
                         forceAlternative = true,
-                        initialPositionMs = currentPos
+                        initialPositionMs = currentPos,
+                        excludedSources = failedSourcesForTrack.toSet()
                     )
                     return
                 }
@@ -147,12 +153,14 @@ class ExoPlaybackManager(context: Context) {
     fun playTrack(
         track: MusicTrack,
         queueList: List<MusicTrack>? = null,
-        preserveRetryFlag: Boolean = false,
+        isRetry: Boolean = false,
         forceAlternative: Boolean = false,
-        initialPositionMs: Long = 0L
+        initialPositionMs: Long = 0L,
+        excludedSources: Set<String> = emptySet()
     ) {
-        if (!preserveRetryFlag) {
-            retriedCurrentTrack = false
+        if (!isRetry) {
+            failedSourcesForTrack.clear()
+            retryCountForTrack = 0
         }
         loadTrackJob?.cancel()
         ensurePlaybackServiceStarted()
@@ -188,6 +196,10 @@ class ExoPlaybackManager(context: Context) {
                 durationMs = track.durationSeconds * 1000L,
                 currentPositionMs = initialPositionMs
             )
+        }
+
+        if (!isRetry) {
+            loadSuggestionsForTrack(track, effectiveQueue)
         }
 
         val metadata = buildMediaMetadata(track)
@@ -229,7 +241,8 @@ class ExoPlaybackManager(context: Context) {
                 val streamInfo = MusicApplication.instance.innerTubeService.extractPlayerStream(
                     videoId = videoId,
                     allowFallback = false,
-                    forceAlternative = forceAlternative
+                    forceAlternative = forceAlternative,
+                    excludedSources = excludedSources
                 )
 
                 val headerMap = streamInfo.headers
@@ -277,7 +290,7 @@ class ExoPlaybackManager(context: Context) {
                 mutableState.update {
                     it.copy(
                         currentTrack = track.copy(streamUrl = streamInfo.streamUrl),
-                        streamSource = streamInfo.formatDescription,
+                        streamSource = streamInfo.source,
                         streamBitrate = streamInfo.bitrate,
                         streamMimeType = streamInfo.mimeType,
                         isSignedStream = streamInfo.isSigned,
@@ -297,6 +310,80 @@ class ExoPlaybackManager(context: Context) {
                 }
             }
         }
+    }
+
+    private fun loadSuggestionsForTrack(seedTrack: MusicTrack, currentQueue: List<MusicTrack>) {
+        suggestionsJob?.cancel()
+        mutableState.update { it.copy(isLoadingSuggestions = true) }
+
+        suggestionsJob = scope.launch {
+            try {
+                val vid = seedTrack.youtubeId.ifBlank { seedTrack.id }
+                val fetched = MusicApplication.instance.innerTubeService.fetchUpNextSuggestions(
+                    videoId = vid,
+                    seedTrack = seedTrack
+                )
+                val queuedIds = currentQueue.mapTo(mutableSetOf()) { it.youtubeId.ifBlank { it.id } }
+                val currentVid = seedTrack.youtubeId.ifBlank { seedTrack.id }
+                val freshSuggestions = fetched.filter { candidate ->
+                    val candVid = candidate.youtubeId.ifBlank { candidate.id }
+                    candidate.id != seedTrack.id && candVid != currentVid && candVid !in queuedIds
+                }.ifEmpty {
+                    fetched.filter { candidate ->
+                        val candVid = candidate.youtubeId.ifBlank { candidate.id }
+                        candidate.id != seedTrack.id && candVid != currentVid
+                    }
+                }
+                mutableState.update {
+                    it.copy(
+                        suggestedTracks = freshSuggestions,
+                        isLoadingSuggestions = false
+                    )
+                }
+            } catch (_: Exception) {
+                mutableState.update { it.copy(isLoadingSuggestions = false) }
+            }
+        }
+    }
+
+    fun playSuggestedTrack(track: MusicTrack) {
+        val currentQueue = mutableState.value.queue.toMutableList()
+        val existingIdx = currentQueue.indexOfFirst { it.id == track.id }
+        val targetQueue = if (existingIdx >= 0) {
+            currentQueue
+        } else {
+            val insertIdx = (mutableState.value.queueIndex + 1).coerceIn(0, currentQueue.size)
+            currentQueue.add(insertIdx, track)
+            currentQueue
+        }
+        mutableState.update { state ->
+            state.copy(suggestedTracks = state.suggestedTracks.filterNot { it.id == track.id })
+        }
+        playTrack(track, targetQueue)
+    }
+
+    fun enqueueSuggestion(track: MusicTrack) {
+        val currentQueue = mutableState.value.queue
+        if (currentQueue.none { it.id == track.id }) {
+            val updated = currentQueue + track
+            if (originalQueue.none { it.id == track.id }) {
+                originalQueue = originalQueue + track
+            }
+            mutableState.update { state ->
+                state.copy(
+                    queue = updated,
+                    suggestedTracks = state.suggestedTracks.filterNot { it.id == track.id }
+                )
+            }
+        } else {
+            mutableState.update { state ->
+                state.copy(suggestedTracks = state.suggestedTracks.filterNot { it.id == track.id })
+            }
+        }
+    }
+
+    fun toggleAutoplay() {
+        mutableState.update { it.copy(autoplayEnabled = !it.autoplayEnabled) }
     }
 
     private fun buildMediaMetadata(track: MusicTrack): MediaMetadata {
@@ -326,10 +413,17 @@ class ExoPlaybackManager(context: Context) {
 
     fun retryCurrentTrack() {
         val track = mutableState.value.currentTrack ?: return
+        val resumePos = mutableState.value.currentPositionMs.takeIf { it > 0L } ?: 0L
         val vid = track.youtubeId.ifBlank { track.id }
         MusicApplication.instance.innerTubeService.invalidateStream(vid)
-        retriedCurrentTrack = false
-        playTrack(track, mutableState.value.queue, forceAlternative = true)
+        failedSourcesForTrack.clear()
+        retryCountForTrack = 0
+        playTrack(
+            track = track,
+            queueList = mutableState.value.queue,
+            forceAlternative = true,
+            initialPositionMs = resumePos
+        )
     }
 
     fun playFromQueue(index: Int) {
@@ -342,7 +436,7 @@ class ExoPlaybackManager(context: Context) {
     fun togglePlayPause() {
         if (player.isPlaying) {
             player.pause()
-        } else if (player.mediaItemCount > 0) {
+        } else if (player.mediaItemCount > 0 && mutableState.value.errorMessage.isNullOrBlank()) {
             ensurePlaybackServiceStarted()
             player.play()
         } else {
@@ -365,14 +459,27 @@ class ExoPlaybackManager(context: Context) {
     }
 
     fun next() {
-        val q = mutableState.value.queue
-        if (q.isEmpty()) return
-        if (q.size == 1 && mutableState.value.repeatMode == RepeatMode.ALL) {
+        val stateVal = mutableState.value
+        val q = stateVal.queue
+        if (q.isEmpty()) {
+            val firstSug = stateVal.suggestedTracks.firstOrNull() ?: return
+            playSuggestedTrack(firstSug)
+            return
+        }
+        if (stateVal.queueIndex in 0 until q.lastIndex) {
+            playTrack(q[stateVal.queueIndex + 1])
+            return
+        }
+        if (stateVal.autoplayEnabled && stateVal.suggestedTracks.isNotEmpty() && stateVal.repeatMode != RepeatMode.ALL) {
+            playSuggestedTrack(stateVal.suggestedTracks.first())
+            return
+        }
+        if (q.size == 1 && stateVal.repeatMode == RepeatMode.ALL) {
             seekTo(0L)
             player.play()
             return
         }
-        val nextIdx = (mutableState.value.queueIndex + 1) % q.size
+        val nextIdx = (stateVal.queueIndex + 1) % q.size
         playTrack(q[nextIdx])
     }
 
@@ -463,7 +570,8 @@ class ExoPlaybackManager(context: Context) {
     fun cancelSleepTimer() = setSleepTimer(null)
 
     private fun handleTrackEnded() {
-        when (mutableState.value.repeatMode) {
+        val stateVal = mutableState.value
+        when (stateVal.repeatMode) {
             RepeatMode.ONE -> {
                 seekTo(0L)
                 player.play()
@@ -472,9 +580,11 @@ class ExoPlaybackManager(context: Context) {
                 next()
             }
             RepeatMode.OFF -> {
-                val q = mutableState.value.queue
-                if (mutableState.value.queueIndex in 0 until q.lastIndex) {
+                val q = stateVal.queue
+                if (stateVal.queueIndex in 0 until q.lastIndex) {
                     next()
+                } else if (stateVal.autoplayEnabled && stateVal.suggestedTracks.isNotEmpty()) {
+                    playSuggestedTrack(stateVal.suggestedTracks.first())
                 } else {
                     player.pause()
                     player.seekTo(0L)
@@ -510,13 +620,15 @@ class ExoPlaybackManager(context: Context) {
 
     fun release() {
         loadTrackJob?.cancel()
+        suggestionsJob?.cancel()
         stopProgressTracker()
         sleepTimerJob?.cancel()
         player.release()
     }
 
     companion object {
+        private const val MAX_STREAM_RETRIES = 4
         private const val DEFAULT_USER_AGENT =
-            "com.google.android.youtube/20.01.35 (Linux; U; Android 11) gzip"
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
     }
 }

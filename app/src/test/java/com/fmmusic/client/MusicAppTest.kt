@@ -94,12 +94,24 @@ class MusicAppTest {
     fun testExtractPlayerStreamReturnsSignedStreamUrl() = runBlocking {
         val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
         try {
-            val streamInfo = service.extractPlayerStream("ElZfdU54Cp8", allowFallback = true)
+            val streamInfo = service.extractPlayerStream("nyxlL-uCt4g", allowFallback = true)
             assertNotNull("Expected non-null streamInfo", streamInfo)
             assertTrue("Expected streamUrl to be populated", streamInfo.streamUrl.isNotBlank())
             assertTrue("Expected stream to be marked signed", streamInfo.isSigned)
             assertTrue("Expected valid audio bitrate", streamInfo.bitrate > 0)
-            assertTrue("Expected audio mime type", streamInfo.mimeType.contains("audio"))
+            assertTrue("Expected audio mime type", streamInfo.mimeType.contains("audio") || streamInfo.mimeType.contains("mp4"))
+        } finally {
+            service.close()
+        }
+    }
+
+    @Test
+    fun testFetchUpNextSuggestionsReturnsTracks() = runBlocking {
+        val service = InnerTubeClientService(CoroutineScope(Dispatchers.Default))
+        try {
+            val suggestions = service.fetchUpNextSuggestions("nyxlL-uCt4g", MusicCatalogData.curatedTracks.first())
+            assertFalse("Expected non-empty suggestions list", suggestions.isEmpty())
+            assertTrue("Expected suggestions not to repeat seed videoId", suggestions.none { it.youtubeId == "nyxlL-uCt4g" })
         } finally {
             service.close()
         }

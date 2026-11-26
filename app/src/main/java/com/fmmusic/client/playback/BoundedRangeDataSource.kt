@@ -40,12 +40,17 @@ class BoundedRangeDataSource(
         originalDataSpec = dataSpec
         currentPosition = dataSpec.position
         bytesToReadTotal = dataSpec.length
+        totalStreamLength = C.LENGTH_UNSET.toLong()
+        bytesRemainingInCurrentChunk = 0L
         isClosed = false
 
         val uriString = dataSpec.uri.toString()
-        val isGoogleVideo = uriString.contains("googlevideo.com")
+        val needsBoundedChunking = uriString.contains("googlevideo.com") &&
+            !uriString.contains("c=VISIONOS") &&
+            !uriString.contains("c=WEB_REMIX") &&
+            !uriString.contains("c=WEB")
 
-        if (!isGoogleVideo) {
+        if (!needsBoundedChunking) {
             val upstream = upstreamFactory.createDataSource()
             listeners.forEach { upstream.addTransferListener(it) }
             currentUpstream = upstream
@@ -93,7 +98,11 @@ class BoundedRangeDataSource(
         if (currentUpstream == null) return C.RESULT_END_OF_INPUT
 
         val uriString = originalDataSpec?.uri?.toString().orEmpty()
-        if (!uriString.contains("googlevideo.com")) {
+        val needsBoundedChunking = uriString.contains("googlevideo.com") &&
+            !uriString.contains("c=VISIONOS") &&
+            !uriString.contains("c=WEB_REMIX") &&
+            !uriString.contains("c=WEB")
+        if (!needsBoundedChunking) {
             return currentUpstream?.read(buffer, offset, length) ?: C.RESULT_END_OF_INPUT
         }
 

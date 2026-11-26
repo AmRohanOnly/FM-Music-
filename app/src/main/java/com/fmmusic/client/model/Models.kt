@@ -67,7 +67,10 @@ data class PlaybackUiState(
     val streamSource: String? = null,
     val streamBitrate: Int? = null,
     val streamMimeType: String? = null,
-    val isSignedStream: Boolean = false
+    val isSignedStream: Boolean = false,
+    val suggestedTracks: List<MusicTrack> = emptyList(),
+    val isLoadingSuggestions: Boolean = false,
+    val autoplayEnabled: Boolean = true
 ) {
     val hasMedia: Boolean get() = currentTrack != null
     val progressFraction: Float

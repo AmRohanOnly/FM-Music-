@@ -586,7 +586,10 @@ private fun ModernMusicAppRoot(
                         when (activeTab) {
                             NavigationTab.HOME -> {
                                 HomeScreen(
+                                    suggestedTracks = playbackState.suggestedTracks,
+                                    suggestedSeedTitle = playbackState.currentTrack?.title,
                                     onPlayTrack = { track, list -> playbackManager.playTrack(track, list) },
+                                    onPlaySuggestion = { playbackManager.playSuggestedTrack(it) },
                                     onToggleFavorite = { app.toggleFavorite(it) },
                                     onAddToPlaylist = { showAddToPlaylistDialogForTrack = it },
                                     isFavorite = { app.isFavorite(it) },
@@ -682,7 +685,10 @@ private fun ModernMusicAppRoot(
             onRetryTrack = playbackManager::retryCurrentTrack,
             onAddToPlaylist = {
                 showAddToPlaylistDialogForTrack = playbackState.currentTrack
-            }
+            },
+            onPlaySuggestion = { playbackManager.playSuggestedTrack(it) },
+            onEnqueueSuggestion = { playbackManager.enqueueSuggestion(it) },
+            onToggleAutoplay = playbackManager::toggleAutoplay
         )
     }
 
@@ -1100,7 +1106,10 @@ private fun YtMiniPlayerBar(
 
 @Composable
 private fun HomeScreen(
+    suggestedTracks: List<MusicTrack> = emptyList(),
+    suggestedSeedTitle: String? = null,
     onPlayTrack: (MusicTrack, List<MusicTrack>) -> Unit,
+    onPlaySuggestion: (MusicTrack) -> Unit = {},
     onToggleFavorite: (MusicTrack) -> Unit,
     onAddToPlaylist: (MusicTrack) -> Unit,
     isFavorite: (String) -> Boolean,
@@ -1216,6 +1225,114 @@ private fun HomeScreen(
             }
 
             Spacer(Modifier.height(22.dp))
+        }
+
+        // Dynamic YouTube-style Recommended Next section when listening
+        if (suggestedTracks.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Recommended Next",
+                            color = palette.textPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!suggestedSeedTitle.isNullOrBlank()) {
+                            Text(
+                                "Because you're listening to $suggestedSeedTitle",
+                                color = palette.textSecondary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Text(
+                        "PLAY NEXT",
+                        color = accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            onPlaySuggestion(suggestedTracks.first())
+                        }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            items(suggestedTracks.take(5)) { track ->
+                TrackListItem(
+                    track = track,
+                    isFav = isFavorite(track.id),
+                    onPlay = { onPlaySuggestion(track) },
+                    onToggleFav = { onToggleFavorite(track) },
+                    onAddToPlaylist = { onAddToPlaylist(track) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+
+        // Dynamic YouTube-style Recommended Next Section
+        if (suggestedTracks.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Recommended Next",
+                            color = palette.textPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!currentTrackTitle.isNullOrBlank()) {
+                            Text(
+                                "Because you listened to $currentTrackTitle",
+                                color = palette.textSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Text(
+                        "PLAY MIX",
+                        color = accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            onPlayTrack(suggestedTracks.first(), suggestedTracks)
+                        }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            items(suggestedTracks.take(5)) { track ->
+                TrackListItem(
+                    track = track,
+                    isFav = isFavorite(track.id),
+                    onPlay = { onPlayTrack(track, suggestedTracks) },
+                    onToggleFav = { onToggleFavorite(track) },
+                    onAddToPlaylist = { onAddToPlaylist(track) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                Spacer(Modifier.height(14.dp))
+            }
         }
 
         // Section Title: Quick Picks
@@ -1950,13 +2067,16 @@ private fun NowPlayingExpandedSheet(
     onToggleDownload: () -> Unit,
     onPlayQueueTrack: (Int) -> Unit,
     onRetryTrack: () -> Unit,
-    onAddToPlaylist: () -> Unit
+    onAddToPlaylist: () -> Unit,
+    onPlaySuggestion: (MusicTrack) -> Unit = {},
+    onEnqueueSuggestion: (MusicTrack) -> Unit = {},
+    onToggleAutoplay: () -> Unit = {}
 ) {
     val palette = LocalAppPalette.current
     val accent = LocalAccentColor.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Track", "Lyrics", "Queue")
+    val tabs = listOf("Track", "Lyrics", "Up Next")
 
     val albumScale by animateFloatAsState(
         targetValue = if (state.isPlaying) 1.0f else 0.92f,
@@ -2330,6 +2450,72 @@ private fun NowPlayingExpandedSheet(
                             )
                         }
                     }
+
+                    // Minimal YouTube-style Up Next preview pill
+                    val nextQueuedTrack = if (state.queueIndex in 0 until state.queue.lastIndex) {
+                        state.queue[state.queueIndex + 1]
+                    } else if (state.autoplayEnabled) {
+                        state.suggestedTracks.firstOrNull()
+                    } else {
+                        null
+                    }
+                    if (nextQueuedTrack != null || state.isLoadingSuggestions) {
+                        Spacer(Modifier.height(18.dp))
+                        Surface(
+                            color = palette.surfaceCard,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, palette.border),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedTab = 2 }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (nextQueuedTrack != null) {
+                                    TrackArtworkImage(
+                                        track = nextQueuedTrack,
+                                        modifier = Modifier.size(34.dp),
+                                        cornerRadiusDp = 6
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            if (state.queueIndex in 0 until state.queue.lastIndex) "UP NEXT" else "SUGGESTED NEXT",
+                                            color = accent,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.6.sp
+                                        )
+                                        Text(
+                                            "${nextQueuedTrack.title} • ${nextQueuedTrack.artist}",
+                                            color = palette.textPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    NextIcon(tint = palette.textSecondary, modifier = Modifier.size(16.dp))
+                                } else {
+                                    CircularProgressIndicator(
+                                        color = accent,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "Finding next suggested song...",
+                                        color = palette.textSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             1 -> {
@@ -2361,20 +2547,20 @@ private fun NowPlayingExpandedSheet(
                     }
                 }
                 2 -> {
-                    // Queue View
+                    // Up Next: Queue + YouTube Suggestions Radio
                     val queue = state.queue
-                    if (queue.isEmpty()) {
-                        Text(
-                            "Queue is empty.",
-                            color = palette.textSecondary,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(vertical = 40.dp)
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (queue.isNotEmpty()) {
+                            Text(
+                                "Playing Queue (${queue.size})",
+                                color = palette.textSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
                             queue.forEachIndexed { idx, track ->
                                 val isCurrent = idx == state.queueIndex
                                 Surface(
@@ -2412,6 +2598,109 @@ private fun NowPlayingExpandedSheet(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                        }
+
+                        // YouTube-style Up Next Suggestions Header + Autoplay toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Up Next Suggestions",
+                                    color = palette.textPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Similar songs matched to what's playing",
+                                    color = palette.textSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Surface(
+                                color = if (state.autoplayEnabled) accent else palette.surfaceCard,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, if (state.autoplayEnabled) accent else palette.border),
+                                modifier = Modifier.clickable(onClick = onToggleAutoplay)
+                            ) {
+                                Text(
+                                    if (state.autoplayEnabled) "Autoplay ON" else "Autoplay OFF",
+                                    color = if (state.autoplayEnabled) Color.White else palette.textSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+
+                        if (state.isLoadingSuggestions && state.suggestedTracks.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = accent, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                            }
+                        } else if (state.suggestedTracks.isEmpty()) {
+                            Text(
+                                "No additional suggestions right now.",
+                                color = palette.textSecondary,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        } else {
+                            state.suggestedTracks.forEach { suggested ->
+                                Surface(
+                                    color = palette.surfaceCard,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, palette.border),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onPlaySuggestion(suggested) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TrackArtworkImage(
+                                            track = suggested,
+                                            modifier = Modifier.size(42.dp),
+                                            cornerRadiusDp = 8
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                suggested.title,
+                                                color = palette.textPrimary,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                "${suggested.artist} • ${suggested.durationFormatted}",
+                                                color = palette.textSecondary,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Button(
+                                            onClick = { onEnqueueSuggestion(suggested) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = palette.surface),
+                                            shape = CircleShape,
+                                            modifier = Modifier.size(32.dp),
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            PlusIcon(tint = palette.textPrimary, modifier = Modifier.size(16.dp))
                                         }
                                     }
                                 }

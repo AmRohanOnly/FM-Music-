@@ -1281,60 +1281,6 @@ private fun HomeScreen(
             }
         }
 
-        // Dynamic YouTube-style Recommended Next Section
-        if (suggestedTracks.isNotEmpty()) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Recommended Next",
-                            color = palette.textPrimary,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!currentTrackTitle.isNullOrBlank()) {
-                            Text(
-                                "Because you listened to $currentTrackTitle",
-                                color = palette.textSecondary,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Text(
-                        "PLAY MIX",
-                        color = accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            onPlayTrack(suggestedTracks.first(), suggestedTracks)
-                        }
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-            }
-
-            items(suggestedTracks.take(5)) { track ->
-                TrackListItem(
-                    track = track,
-                    isFav = isFavorite(track.id),
-                    onPlay = { onPlayTrack(track, suggestedTracks) },
-                    onToggleFav = { onToggleFavorite(track) },
-                    onAddToPlaylist = { onAddToPlaylist(track) }
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            item {
-                Spacer(Modifier.height(14.dp))
-            }
-        }
-
         // Section Title: Quick Picks
         item {
             Row(
